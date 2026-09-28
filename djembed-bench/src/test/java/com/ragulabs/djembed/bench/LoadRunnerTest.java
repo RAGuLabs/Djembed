@@ -56,8 +56,9 @@ class LoadRunnerTest {
         AtomicInteger opened = new AtomicInteger();
         AtomicInteger closed = new AtomicInteger();
 
+        // The warm-up absorbs cold-start costs (class loading, JIT, connections) that a CI runner pays on first use.
         LoadRunner.Measurement m = LoadRunner.run(client(), List.of(request("/ok")), 4,
-                Duration.ofMillis(200), Duration.ofMillis(500), new LoadRunner.Window() {
+                Duration.ofMillis(500), Duration.ofSeconds(1), new LoadRunner.Window() {
                     @Override
                     public void opened() {
                         opened.incrementAndGet();
@@ -79,8 +80,9 @@ class LoadRunnerTest {
 
     @Test
     void countsFailures() throws Exception {
+        // After the warm-up, the window must fit several failures despite the back-off each one is followed by.
         LoadRunner.Measurement m = LoadRunner.run(client(), List.of(request("/fail")), 2,
-                Duration.ZERO, Duration.ofMillis(200), new LoadRunner.Window() {
+                Duration.ofMillis(500), Duration.ofSeconds(1), new LoadRunner.Window() {
                     @Override
                     public void opened() {
                     }
