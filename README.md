@@ -93,8 +93,8 @@ it. The options records mirror the `models[]` keys above.
 
 `djembed-bench` sends identical, seeded requests to Djembed and to Text Embeddings Inference at the same precision on
 the same GPU, and first checks that their outputs agree. Results go to `bench-results/<timestamp>/results.md` and
-`results.json`. The default round is strict fp32; `BENCH_TEI_DTYPE=float16 BENCH_MODEL_SUFFIX=-fp16` runs the fp16
-round against fused fp16 exports (see the compose file).
+`results.json`. The default round is strict fp32; `BENCH_TEI_DTYPE=float16 BENCH_MODEL_SUFFIX=-fp16-packed` runs the
+fp16 round, against the fused, packed fp16 models built by `djembed-bench/export-fp16-packed.sh <models dir>`.
 
 ```
 DJEMBED_MODELS=/path/to/models docker compose -f djembed-bench/docker-compose.yml up --build -d
@@ -109,3 +109,50 @@ DJEMBED_MODELS=/path/to/models docker compose -f djembed-bench/docker-compose.ym
 | `--seed` | `42` | Corpus seed |
 | `--gpu` | none | GPU index to sample with `nvidia-smi` (run on the GPU host) |
 | `--api-key` | none | Djembed API key |
+
+### Results
+
+RTX 3090 Ti, Djembed 0.1.0 against TEI 1.9 (`86-1.9`), `BAAI/bge-m3@5617a9f` and `BAAI/bge-reranker-v2-m3@953dc6f`.
+Both servers batch up to 16384 tokens per forward pass, accept 32 inputs per request and admit 8192 queued inputs;
+warm-up 15 s, measured 60 s per run, seed 42. Before any load, both servers' outputs agree: embedding cosine ≥ 0.99994,
+rerank scores within 0.0032.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="djembed-bench/results/throughput-dark.svg">
+  <img alt="Requests per second of Djembed and TEI for query, ingest and rerank by concurrent clients, strict fp32 and fp16" src="djembed-bench/results/throughput-light.svg">
+</picture>
+
+Djembed relative to TEI, as throughput · p99 latency by concurrent clients: throughput above 1.00× and p99 below 1.00×
+favour Djembed.
+
+| fp32 | 1 | 8 | 32 | 128 |
+|---|---:|---:|---:|---:|
+| query | 0.85× · 1.44× | 1.24× · 0.83× | 1.42× · 0.75× | 1.59× · 0.65× |
+| ingest | 0.97× · 0.97× | 1.52× · 0.95× | 1.54× · 0.72× | 1.71× · 0.67× |
+| rerank | 0.96× · 0.93× | 1.33× · 0.75× | 1.46× · 0.73× | 1.78× · 0.73× |
+
+| fp16 | 1 | 8 | 32 | 128 |
+|---|---:|---:|---:|---:|
+| query | 1.11× · 0.91× | 1.46× · 0.77× | 1.33× · 0.80× | 1.18× · 0.86× |
+| ingest | 1.11× · 0.93× | 1.03× · 0.88× | 1.04× · 1.11× | 1.04× · 1.14× |
+| rerank | 1.12× · 0.89× | 1.02× · 0.80× | 1.02× · 1.07× | 0.98× · 1.17× |
+
+Reading the numbers:
+
+- **fp32** is strict on both sides: TEI `--dtype float32`, Djembed `tf32: false` on plain ONNX exports (Djembed's
+  default TF32 is faster still, but not like for like). Both pad every batch here, so the difference is scheduling:
+  Djembed batches across requests and packs sequences of similar length together, so it computes less padding and,
+  on ingest, keeps the GPU at 100% where TEI sits at 93–94%. With one client there is nothing to batch and the two
+  are close (0.85–0.97×); from 8 clients up Djembed pulls ahead, to 1.59–1.78× at 128 with about a third lower p99.
+  Ingest peaks at 30 k tokens/s against 19 k.
+- **fp16** pits TEI's float16 path, with Flash Attention, against Djembed on fused fp16 models in ONNX Runtime
+  packing mode (built by `export-fp16-packed.sh`). Both now run attention on real tokens only, so from 8 clients up
+  both keep the GPU at 100% on ingest and rerank, and throughput meets the card's fp16 ceiling: ingest settles at
+  106–108 k tokens/s for Djembed and 103 k for TEI, and no scheduler can go much past that. What remains is per-request overhead, where
+  Djembed leads: query at 1.11–1.46×, and 1.11–1.12× for single-client ingest and rerank.
+- **p99 under saturation**: at 32 and 128 clients Djembed's p99 on ingest and rerank is 7–17% higher. Its scheduler
+  gives every waiting request a fair share of each round, so a search query overtakes a large ingestion batch instead
+  of queueing behind it; with identical requests only, the same fairness spreads completion times a little wider.
+
+Full tables, absolute throughput and latency percentiles included:
+[fp32](djembed-bench/results/2026-09-29-rtx3090ti-fp32.md), [fp16](djembed-bench/results/2026-09-29-rtx3090ti-fp16.md).
