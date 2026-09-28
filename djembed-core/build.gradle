@@ -1,0 +1,50 @@
+plugins {
+    id 'djembed.java-conventions'
+    id 'java-library'
+}
+
+dependencies {
+    api libs.slf4j.api
+
+    // The ONNX Runtime flavour is a deployment choice: consumers add either
+    // onnxruntime (CPU) or onnxruntime_gpu (CUDA + CPU). Both ship the same classes.
+    compileOnly libs.onnxruntime
+    testImplementation libs.onnxruntime.gpu
+
+    implementation libs.djl.tokenizers
+    implementation platform(libs.jackson.bom)
+    implementation libs.jackson.databind
+
+    testRuntimeOnly libs.logback.classic
+}
+
+tasks.named('test') {
+    // Model tests load real checkpoints and can saturate a GPU for a while:
+    // opt in with `./gradlew test -PrunOnnx -Pmodels=/path/to/models [-Pdevice=cuda:0]`.
+    useJUnitPlatform {
+        if (!project.hasProperty('runOnnx')) {
+            excludeTags 'onnx'
+        }
+    }
+    systemProperty 'djembed.test.models', findProperty('models') ?: ''
+    systemProperty 'djembed.test.device', findProperty('device') ?: 'cpu'
+    jvmArgs '--enable-native-access=ALL-UNNAMED'
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+    }
+}
+
+java {
+    withJavadocJar()
+    withSourcesJar()
+}
+
+tasks.named('javadoc') {
+    // The published API is the root package; internal types carry no compatibility promise.
+    exclude 'dev/fgnm/djembed/core/internal/**'
+    // Broken references and HTML still fail the build; only "no comment" notices on self-explanatory members are off.
+    options.addBooleanOption('Xdoclint:all,-missing', true)
+}
+
+apply from: rootProject.file('publish.gradle')

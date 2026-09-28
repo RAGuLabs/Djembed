@@ -1,0 +1,44 @@
+# From the repository root:
+#   DJEMBED_MODELS=/path/to/models DJEMBED_API_KEYS=change-me docker compose -f docker/docker-compose.yml up --build
+#
+# DJEMBED_MODELS is the host folder holding one folder per model (model.onnx or onnx/model.onnx, tokenizer.json,
+# config.json, ...); it is mounted read-only at /models, which the configuration below refers to.
+
+services:
+  djembed:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: djembed:latest
+    ports:
+      - "8080:8080"
+    environment:
+      DJEMBED_API_KEYS: ${DJEMBED_API_KEYS:?set DJEMBED_API_KEYS to one or more comma-separated API keys}
+    volumes:
+      - ${DJEMBED_MODELS:?set DJEMBED_MODELS to the host folder holding the models}:/models:ro
+    configs:
+      - source: djembed
+        target: /etc/djembed/djembed.yaml
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+configs:
+  djembed:
+    content: |
+      server:
+        port: 8080
+      models:
+        - name: bge-m3
+          task: embed
+          path: /models/bge-m3
+          device: cuda:0
+        - name: bge-reranker-v2-m3
+          task: rerank
+          path: /models/bge-reranker-v2-m3
+          device: cuda:0

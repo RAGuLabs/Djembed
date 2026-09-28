@@ -1,0 +1,119 @@
+apply plugin: 'maven-publish'
+apply plugin: 'signing'
+
+ext.artifact = 'djembed-core'
+ext.packaging = 'jar'
+
+def isDevBuild
+def isCiBuild
+def isReleaseBuild
+
+def sonatypeRepositoryUrl
+
+//set build variables based on build type (release, continuous integration, development)
+if(hasProperty("RELEASE")) {
+    isReleaseBuild = true
+    sonatypeRepositoryUrl = "https://ossrh-staging-api.central.sonatype.com/service/local/staging/deploy/maven2/"
+    println "Performing release build"
+} else if (hasProperty("SNAPSHOT")) {
+    isCiBuild = true
+    version += "-SNAPSHOT"
+    sonatypeRepositoryUrl = "https://central.sonatype.com/repository/maven-snapshots/"
+    println "Performing snapshot build"
+} else {
+    version += "-LOCAL"
+    isDevBuild = true
+    println "Performing local build"
+}
+
+def getRepositoryUsername = {
+    return project.hasProperty('NEXUS_USERNAME') ? NEXUS_USERNAME : "$System.env.NEXUS_USERNAME"
+}
+
+def getRepositoryPassword = {
+    return project.hasProperty('NEXUS_PASSWORD') ? NEXUS_PASSWORD : "$System.env.NEXUS_PASSWORD"
+}
+
+repositories {
+    mavenCentral()
+}
+
+if(isReleaseBuild) {
+    signing {
+        useGpgCmd()
+        sign publishing.publications
+    }
+} else {
+    task signArchives {
+        // do nothing
+    }
+}
+
+// Djembed enables the configuration cache; uploading and signing read repository credentials and the GPG agent,
+// so they run without it.
+tasks.withType(PublishToMavenRepository).configureEach {
+    notCompatibleWithConfigurationCache("reads repository credentials")
+}
+tasks.withType(Sign).configureEach {
+    notCompatibleWithConfigurationCache("uses the GPG agent")
+}
+
+def configurePom = { pom ->
+    pom.with {
+        name = "Djembed Core"
+        description = "Distributed Java Embeddings: in-process ONNX Runtime embedding and reranking engines with cross-request batching"
+        url = "https://github.com/RAGuLabs/Djembed"
+        licenses {
+            license {
+                name = "The Apache Software License, Version 2.0"
+                url = "http://www.apache.org/licenses/LICENSE-2.0.txt"
+                distribution = "repo"
+            }
+        }
+        developers {
+            developer {
+                id = "fgnm"
+                name = "Francesco Marongiu"
+                email = "fgnm.dev@gmail.com"
+            }
+        }
+        scm {
+            connection = "scm:git@github.com:RAGuLabs/Djembed.git"
+            developerConnection = "scm:git@github.com:RAGuLabs/Djembed.git"
+            url = "scm:git@github.com:RAGuLabs/Djembed.git"
+        }
+    }
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            versionMapping {
+                usage('java-api') {
+                    fromResolutionOf('runtimeClasspath')
+                }
+                usage('java-runtime') {
+                    fromResolutionResult()
+                }
+            }
+
+            artifactId = artifact
+            pom(configurePom)
+        }
+    }
+
+    repositories {
+        maven {
+            url = sonatypeRepositoryUrl
+
+            if (getRepositoryUsername() || getRepositoryPassword())
+            {
+                credentials {
+                    username = getRepositoryUsername()
+                    password = getRepositoryPassword()
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,36 @@
+plugins {
+    id 'djembed.java-conventions'
+    id 'application'
+}
+
+dependencies {
+    implementation project(':djembed-core')
+
+    implementation platform(libs.armeria.bom)
+    implementation platform(libs.jackson.bom)
+    implementation libs.armeria
+    implementation libs.armeria.prometheus1
+    implementation libs.jackson.dataformat.yaml
+
+    runtimeOnly libs.onnxruntime.gpu
+    runtimeOnly libs.logback.classic
+
+    testImplementation libs.armeria.junit5
+    // The clients RAGu uses: tests prove wire compatibility with them, not with our reading of the docs.
+    testImplementation libs.langchain4j.cohere
+    testImplementation libs.langchain4j.open.ai.official
+    testRuntimeOnly libs.langchain4j.http.client.jdk
+}
+
+application {
+    mainClass = 'dev.fgnm.djembed.server.Djembed'
+    applicationDefaultJvmArgs = ['-XX:+UseZGC', '--enable-native-access=ALL-UNNAMED']
+}
+
+tasks.named('test') {
+    jvmArgs '--enable-native-access=ALL-UNNAMED'
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+    }
+}

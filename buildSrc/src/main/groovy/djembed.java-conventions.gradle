@@ -1,0 +1,33 @@
+plugins {
+    id 'java'
+}
+
+group = 'dev.fgnm.djembed'
+version = '0.1.0'
+
+repositories {
+    mavenCentral()
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.compilerArgs.addAll(['-Xlint:all,-classfile', '-Werror'])
+}
+
+def catalog = versionCatalogs.named('libs')
+
+dependencies {
+    testImplementation platform(catalog.findLibrary('junit-bom').get())
+    testImplementation catalog.findLibrary('junit-jupiter').get()
+    testRuntimeOnly catalog.findLibrary('junit-platform-launcher').get()
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}

@@ -1,0 +1,13 @@
+server:
+  host: 0.0.0.0
+  port: 8080
+
+models:
+  - name: bge-m3
+    task: embed
+    path: models/bge-m3
+    device: cuda:0
+  - name: bge-reranker-v2-m3
+    task: rerank
+    path: models/bge-reranker-v2-m3
+    device: cuda:0

@@ -1,0 +1,4 @@
+rootProject.name = 'Djembed'
+
+include 'djembed-core'
+include 'djembed-server'
