@@ -40,14 +40,14 @@ concurrent callers, and inference. It needs Java 25 and one ONNX Runtime artifac
 
 ```groovy
 dependencies {
-    implementation 'dev.fgnm.djembed:djembed-core:0.1.0'
+    implementation 'com.ragulabs.djembed:djembed-core:0.1.0'
     runtimeOnly 'com.microsoft.onnxruntime:onnxruntime_gpu:1.29.0'
 }
 ```
 
 ```xml
 <dependency>
-    <groupId>dev.fgnm.djembed</groupId>
+    <groupId>com.ragulabs.djembed</groupId>
     <artifactId>djembed-core</artifactId>
     <version>0.1.0</version>
 </dependency>
@@ -84,3 +84,23 @@ try (EmbeddingEngine embedder = OnnxEmbeddingEngine.load(Path.of("models/bge-m3"
 Engines are thread-safe: load one per model and share it, so concurrent calls are batched together. A model folder
 holds `model.onnx` (or `onnx/model.onnx`), `tokenizer.json` and `config.json`; token limit and pooling are read from
 it. The options records mirror the `models[]` keys above.
+
+## Benchmark against TEI
+
+`djembed-bench` sends identical, seeded requests to Djembed and to Text Embeddings Inference, both in float32 on the
+same GPU, and first checks that their outputs agree. Results go to `bench-results/<timestamp>/results.md` and
+`results.json`.
+
+```
+DJEMBED_MODELS=/path/to/models docker compose -f djembed-bench/docker-compose.yml up --build -d
+./gradlew :djembed-bench:run --args="--djembed http://localhost:8080 --tei-embed http://localhost:8081 --tei-rerank http://localhost:8082 --gpu 0"
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `--workloads` | `query,ingest,rerank` | 1 short text; 32 passages; a query with 32 documents |
+| `--concurrency` | `1,8,32,128` | Closed-loop clients |
+| `--warmup` / `--duration` | `15s` / `60s` | Per run |
+| `--seed` | `42` | Corpus seed |
+| `--gpu` | none | GPU index to sample with `nvidia-smi` (run on the GPU host) |
+| `--api-key` | none | Djembed API key |

@@ -1,0 +1,19 @@
+plugins {
+    id 'djembed.java-conventions'
+    id 'application'
+}
+
+dependencies {
+    implementation platform(libs.jackson.bom)
+    implementation libs.jackson.databind
+    implementation libs.hdrhistogram
+}
+
+application {
+    mainClass = 'com.ragulabs.djembed.bench.Bench'
+}
+
+tasks.named('run') {
+    // Results are written relative to the directory the benchmark is started from.
+    workingDir = rootProject.projectDir
+}

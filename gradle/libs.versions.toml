@@ -6,6 +6,7 @@ logback = "1.6.4"
 junit = "6.1.3"
 onnxruntime = "1.29.0"
 djl = "0.36.0"
+hdrhistogram = "2.2.2"
 langchain4j = "1.20.1"
 langchain4j-beta = "1.20.1-beta30"
 
@@ -20,6 +21,7 @@ onnxruntime = { module = "com.microsoft.onnxruntime:onnxruntime", version.ref = 
 onnxruntime-gpu = { module = "com.microsoft.onnxruntime:onnxruntime_gpu", version.ref = "onnxruntime" }
 djl-tokenizers = { module = "ai.djl.huggingface:tokenizers", version.ref = "djl" }
 jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind" }
+hdrhistogram = { module = "org.hdrhistogram:HdrHistogram", version.ref = "hdrhistogram" }
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
 langchain4j-cohere = { module = "dev.langchain4j:langchain4j-cohere", version.ref = "langchain4j-beta" }

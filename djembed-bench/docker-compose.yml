@@ -1,0 +1,73 @@
+# The servers under test, all pinned to the same GPU. The benchmark loads one at a time.
+#
+# From the repository root:
+#   DJEMBED_MODELS=/path/to/models docker compose -f djembed-bench/docker-compose.yml up --build -d
+#   ./gradlew :djembed-bench:run --args="--djembed http://localhost:8080 --tei-embed http://localhost:8081 --tei-rerank http://localhost:8082 --gpu 0"
+#
+# DJEMBED_MODELS holds the fp32 ONNX exports (bge-m3/, bge-reranker-v2-m3/). TEI downloads the same models from the
+# Hugging Face Hub, pinned to a revision, and runs them in float32 too, so both sides do the same arithmetic.
+# Batching limits match: 16384 tokens per forward pass, 32 inputs per request. BENCH_GPU picks the device (default 0).
+
+x-gpu: &gpu
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            device_ids: ["${BENCH_GPU:-0}"]
+            capabilities: [gpu]
+
+services:
+  djembed:
+    <<: *gpu
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: djembed:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - ${DJEMBED_MODELS:?set DJEMBED_MODELS to the host folder holding the ONNX models}:/models:ro
+    configs:
+      - source: djembed
+        target: /etc/djembed/djembed.yaml
+
+  tei-embed:
+    <<: *gpu
+    image: ghcr.io/huggingface/text-embeddings-inference:86-1.9
+    command: [ "--model-id", "BAAI/bge-m3", "--revision", "5617a9f61b028005a4858fdac845db406aefb181",
+               "--dtype", "float32", "--max-batch-tokens", "16384", "--max-client-batch-size", "32" ]
+    ports:
+      - "8081:80"
+    volumes:
+      - hf-cache:/data
+
+  tei-rerank:
+    <<: *gpu
+    image: ghcr.io/huggingface/text-embeddings-inference:86-1.9
+    command: [ "--model-id", "BAAI/bge-reranker-v2-m3", "--revision", "953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e",
+               "--dtype", "float32", "--max-batch-tokens", "16384", "--max-client-batch-size", "32" ]
+    ports:
+      - "8082:80"
+    volumes:
+      - hf-cache:/data
+
+volumes:
+  hf-cache:
+
+configs:
+  djembed:
+    content: |
+      server:
+        port: 8080
+      models:
+        - name: bge-m3
+          task: embed
+          path: /models/bge-m3
+          device: cuda:0
+          token-budget: 16384
+        - name: bge-reranker-v2-m3
+          task: rerank
+          path: /models/bge-reranker-v2-m3
+          device: cuda:0
+          token-budget: 16384

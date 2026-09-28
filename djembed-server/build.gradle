@@ -23,7 +23,7 @@ dependencies {
 }
 
 application {
-    mainClass = 'dev.fgnm.djembed.server.Djembed'
+    mainClass = 'com.ragulabs.djembed.server.Djembed'
     applicationDefaultJvmArgs = ['-XX:+UseZGC', '--enable-native-access=ALL-UNNAMED']
 }
 

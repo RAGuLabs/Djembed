@@ -42,7 +42,7 @@ java {
 
 tasks.named('javadoc') {
     // The published API is the root package; internal types carry no compatibility promise.
-    exclude 'dev/fgnm/djembed/core/internal/**'
+    exclude 'com/ragulabs/djembed/core/internal/**'
     // Broken references and HTML still fail the build; only "no comment" notices on self-explanatory members are off.
     options.addBooleanOption('Xdoclint:all,-missing', true)
 }

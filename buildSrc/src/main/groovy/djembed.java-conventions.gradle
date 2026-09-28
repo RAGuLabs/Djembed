@@ -2,7 +2,7 @@ plugins {
     id 'java'
 }
 
-group = 'dev.fgnm.djembed'
+group = 'com.ragulabs.djembed'
 version = '0.1.0'
 
 repositories {
