@@ -67,6 +67,7 @@ class ConfigLoaderTest {
                     token-budget: 8192
                     max-input-tokens: 512
                     max-queued-inputs: 1000
+                    tf32: false
                     long-input: chunk
                     pooling: mean
                     normalize: false
@@ -84,12 +85,14 @@ class ConfigLoaderTest {
         assertEquals(8192, embed.engine().tokenBudget());
         assertEquals(512, embed.engine().maxInputTokens());
         assertEquals(1000, embed.engine().maxQueuedInputs());
+        assertFalse(embed.engine().tf32());
         assertEquals(LongInputStrategy.CHUNK, embed.longInput());
         assertEquals(PoolingMode.MEAN, embed.pooling());
         assertFalse(embed.normalize());
 
         RerankOptions rerank = config.models().get(1).rerankOptions();
         assertEquals(Device.cpu(), rerank.engine().device());
+        assertTrue(rerank.engine().tf32(), "ONNX Runtime's default when unset");
         assertEquals(ScoreActivation.NONE, rerank.activation());
     }
 

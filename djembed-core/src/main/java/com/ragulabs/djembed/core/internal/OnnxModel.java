@@ -51,7 +51,10 @@ public final class OnnxModel implements AutoCloseable {
         this.tokenTypeIds = inputs.containsKey(TOKEN_TYPE_IDS);
     }
 
-    public static OnnxModel load(Path file, Device device) {
+    /**
+     * @param tf32 on CUDA, whether float32 matrix multiplications may use TensorFloat-32 tensor cores
+     */
+    public static OnnxModel load(Path file, Device device, boolean tf32) {
         long started = System.nanoTime();
         // The environment registers ONNX Runtime's logger, which provider options already need.
         OrtEnvironment env = Environment.ORT;
@@ -64,12 +67,15 @@ public final class OnnxModel implements AutoCloseable {
                         // Grow the device arena by what each request needs rather than by powers of two:
                         // input shapes change on every batch, and doubling strands most of the memory.
                         cuda.add("arena_extend_strategy", "kSameAsRequested");
+                        cuda.add("use_tf32", tf32 ? "1" : "0");
                         options.addCUDA(cuda);
                         yield new OnnxModel(env.createSession(file.toString(), options));
                     }
                 }
             };
-            log.info("Loaded {} on {} in {} ms", file, device, (System.nanoTime() - started) / 1_000_000);
+            log.info("Loaded {} on {}{} in {} ms", file, device,
+                    device instanceof Device.Cuda ? (tf32 ? " (tf32)" : " (strict fp32)") : "",
+                    (System.nanoTime() - started) / 1_000_000);
             return model;
         } catch (OrtException e) {
             throw new DjembedException("Cannot load ONNX model " + file + " on " + device + ": " + e.getMessage(), e);

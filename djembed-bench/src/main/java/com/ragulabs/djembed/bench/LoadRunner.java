@@ -20,13 +20,20 @@ import java.util.concurrent.locks.LockSupport;
  * socket, so thousands cost almost nothing, and the load generator stays out of the way of the servers it measures.
  * Every worker records into its own histogram, merged at the end, so measuring adds no contention.
  *
- * <p>After the warm-up, only requests completing inside the measured window count. Response bodies are drained but
+ * <p>After the warm-up, only requests completing inside the measured window count; a failed request is followed by
+ * a short back-off. Response bodies are drained but
  * not parsed, keeping client CPU out of the numbers (content is checked separately, before any load).
  */
 final class LoadRunner {
 
     /** Latencies are recorded in microseconds, up to ten minutes, to three significant digits. */
     private static final long MAX_LATENCY_MICROS = TimeUnit.MINUTES.toMicros(10);
+
+    /**
+     * Pause after a failed request. Without it a refusing server is hit by a retry storm that measures how fast it
+     * can say no and starves the requests it does accept.
+     */
+    static final Duration ERROR_BACKOFF = Duration.ofMillis(100);
 
     record Measurement(long requests, long errors, double seconds, Histogram latency, String firstError) {
 
@@ -74,6 +81,9 @@ final class LoadRunner {
                         return;
                     }
                     long received = System.nanoTime();
+                    if (failure != null) {
+                        LockSupport.parkNanos(ERROR_BACKOFF.toNanos());
+                    }
                     if (received < open || received > close) {
                         continue;
                     }

@@ -75,20 +75,20 @@ public final class DjembedMetrics {
                 .tag(MODEL, model)
                 .register(registry);
         Counter real = Counter.builder("djembed.tokens")
-                .description("Token slots computed by the device, by whether they held a real token or padding")
+                .description("Tokens the encoder computed, real or padding (none for models that remove padding)")
                 .tags(MODEL, model, "kind", "real")
                 .register(registry);
         Counter padding = Counter.builder("djembed.tokens")
-                .description("Token slots computed by the device, by whether they held a real token or padding")
+                .description("Tokens the encoder computed, real or padding (none for models that remove padding)")
                 .tags(MODEL, model, "kind", "padding")
                 .register(registry);
         return new EngineObserver() {
             @Override
-            public void forwardPass(int batchRows, int rowLength, long tokens, long nanos) {
+            public void forwardPass(int batchRows, long tokens, long paddingTokens, long nanos) {
                 passes.record(nanos, TimeUnit.NANOSECONDS);
                 rows.record(batchRows);
                 real.increment(tokens);
-                padding.increment((double) batchRows * rowLength - tokens);
+                padding.increment(paddingTokens);
             }
         };
     }

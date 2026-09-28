@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -19,8 +20,36 @@ import java.util.Map;
  */
 final class Correctness {
 
+    /** fp32 against fp32: different kernels, same arithmetic. Anything below this is a different model or precision. */
+    static final double MIN_COSINE = 0.999;
+    /** Largest tolerated difference between two servers' rerank scores for the same pair, on the [0, 1] scale. */
+    static final double MAX_SCORE_DIFF = 0.01;
+
     record Report(Map<String, Double> minCosine, Map<String, Double> maxScoreDiff, Map<String, Boolean> sameTop,
                   Map<Workload, Double> tokensPerInput, List<String> problems) {
+
+        /** Reasons the targets cannot be compared; empty when they agree. */
+        List<String> failures() {
+            List<String> failures = new ArrayList<>(problems);
+            minCosine.forEach((target, cosine) -> {
+                if (cosine < MIN_COSINE) {
+                    failures.add(String.format(Locale.ROOT, "%s embeddings differ from the reference: min cosine %.6f < %.3f",
+                            target, cosine, MIN_COSINE));
+                }
+            });
+            maxScoreDiff.forEach((target, diff) -> {
+                if (diff > MAX_SCORE_DIFF) {
+                    failures.add(String.format(Locale.ROOT, "%s rerank scores differ from the reference by %.4f > %.2f",
+                            target, diff, MAX_SCORE_DIFF));
+                }
+            });
+            sameTop.forEach((target, top) -> {
+                if (!top) {
+                    failures.add(target + " does not rank the planted relevant document first");
+                }
+            });
+            return failures;
+        }
     }
 
     private Correctness() {

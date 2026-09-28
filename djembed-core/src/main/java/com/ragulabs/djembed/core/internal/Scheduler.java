@@ -41,8 +41,7 @@ public final class Scheduler<R, J extends Job<R>> implements AutoCloseable {
 
     private final String name;
     private final BatchRunner<R, J> runner;
-    private final int maxRows;
-    private final long tokenBudget;
+    private final BatchLimits limits;
     private final int maxQueuedInputs;
     private final Executor completions;
     private final EngineObserver observer;
@@ -59,12 +58,11 @@ public final class Scheduler<R, J extends Job<R>> implements AutoCloseable {
     private int[] roundLengths = new int[64];
     private final BatchPlanner planner = new BatchPlanner();
 
-    public Scheduler(String name, BatchRunner<R, J> runner, int maxRows, long tokenBudget, int maxQueuedInputs,
+    public Scheduler(String name, BatchRunner<R, J> runner, BatchLimits limits, int maxQueuedInputs,
                      Executor completions, EngineObserver observer) {
         this.name = name;
         this.runner = runner;
-        this.maxRows = maxRows;
-        this.tokenBudget = tokenBudget;
+        this.limits = limits;
         this.maxQueuedInputs = maxQueuedInputs;
         this.completions = completions;
         this.observer = observer;
@@ -163,7 +161,7 @@ public final class Scheduler<R, J extends Job<R>> implements AutoCloseable {
         if (count == 0) {
             return;
         }
-        planner.plan(roundLengths, count, maxRows, tokenBudget);
+        planner.plan(roundLengths, count, limits);
         for (int b = 0; b < planner.batches(); b++) {
             int first = planner.start(b);
             int rows = planner.rows(b);
@@ -178,7 +176,7 @@ public final class Scheduler<R, J extends Job<R>> implements AutoCloseable {
             }
             long started = System.nanoTime();
             runner.run();
-            observer.forwardPass(rows, rowLength, tokens, System.nanoTime() - started);
+            observer.forwardPass(rows, tokens, limits.computedPadding(rows, rowLength, tokens), System.nanoTime() - started);
             for (int r = 0; r < rows; r++) {
                 int slot = planner.sequence(first + r);
                 J job = roundJobs.get(slot);
@@ -194,7 +192,7 @@ public final class Scheduler<R, J extends Job<R>> implements AutoCloseable {
     /** Takes each active job's fair share of the round into the round arrays; returns the number of sequences. */
     private int collectRound() {
         roundJobs.clear();
-        long share = Math.max(1, (long) ROUND_BATCHES * tokenBudget / active.size());
+        long share = Math.max(1, (long) ROUND_BATCHES * limits.tokenBudget() / active.size());
         int count = 0;
         for (Iterator<J> it = active.iterator(); it.hasNext(); ) {
             J job = it.next();

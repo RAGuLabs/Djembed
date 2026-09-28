@@ -12,11 +12,11 @@ public interface EngineObserver {
     /**
      * A forward pass completed.
      *
-     * @param rows      sequences in the batch
-     * @param rowLength padded length of every row
-     * @param tokens    real tokens; {@code rows × rowLength − tokens} were padding
-     * @param nanos     time spent in the forward pass, input transfer and output copy included
+     * @param rows    sequences in the batch
+     * @param tokens  real tokens in the batch
+     * @param padding padding tokens the encoder computed besides them: zero for models that remove padding
+     * @param nanos   time spent in the forward pass, input transfer and output copy included
      */
-    default void forwardPass(int rows, int rowLength, long tokens, long nanos) {
+    default void forwardPass(int rows, long tokens, long padding, long nanos) {
     }
 }

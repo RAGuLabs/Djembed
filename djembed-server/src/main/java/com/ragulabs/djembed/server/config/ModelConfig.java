@@ -25,6 +25,7 @@ public record ModelConfig(
         Integer tokenBudget,
         Integer maxInputTokens,
         Integer maxQueuedInputs,
+        Boolean tf32,
         LongInputStrategy longInput,
         PoolingMode pooling,
         Boolean normalize,
@@ -48,7 +49,7 @@ public record ModelConfig(
             rejectFor(name, "activation", activation, "embed");
         }
         try {
-            engineOptions(device, maxBatchSize, tokenBudget, maxInputTokens, maxQueuedInputs);
+            engineOptions(device, maxBatchSize, tokenBudget, maxInputTokens, maxQueuedInputs, tf32);
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException("models[" + name + "]: " + e.getMessage(), e);
         }
@@ -61,11 +62,11 @@ public record ModelConfig(
     }
 
     EngineOptions engineOptions() {
-        return engineOptions(device, maxBatchSize, tokenBudget, maxInputTokens, maxQueuedInputs);
+        return engineOptions(device, maxBatchSize, tokenBudget, maxInputTokens, maxQueuedInputs, tf32);
     }
 
     private static EngineOptions engineOptions(String device, Integer maxBatchSize, Integer tokenBudget,
-                                               Integer maxInputTokens, Integer maxQueuedInputs) {
+                                               Integer maxInputTokens, Integer maxQueuedInputs, Boolean tf32) {
         EngineOptions options = EngineOptions.defaults();
         if (device != null) {
             options = options.withDevice(Device.parse(device));
@@ -81,6 +82,9 @@ public record ModelConfig(
         }
         if (maxQueuedInputs != null) {
             options = options.withMaxQueuedInputs(maxQueuedInputs);
+        }
+        if (tf32 != null) {
+            options = options.withTf32(tf32);
         }
         return options;
     }
@@ -109,6 +113,6 @@ public record ModelConfig(
 
     ModelConfig resolveAgainst(Path baseDir) {
         return path.isAbsolute() ? this : new ModelConfig(name, task, baseDir.resolve(path).normalize(), device,
-                maxBatchSize, tokenBudget, maxInputTokens, maxQueuedInputs, longInput, pooling, normalize, activation);
+                maxBatchSize, tokenBudget, maxInputTokens, maxQueuedInputs, tf32, longInput, pooling, normalize, activation);
     }
 }

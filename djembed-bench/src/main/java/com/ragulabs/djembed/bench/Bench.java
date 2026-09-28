@@ -23,6 +23,8 @@ public final class Bench {
 
     /** Distinct requests per workload; workers cycle through them. */
     private static final int POOL = 256;
+    /** Long enough for a first start that downloads and loads the models. */
+    private static final Duration READY_TIMEOUT = Duration.ofMinutes(15);
 
     private Bench() {
     }
@@ -46,11 +48,22 @@ public final class Bench {
         String gpu = args.gpu() == null ? null : GpuSampler.describe(args.gpu());
         System.out.println("Targets: " + targets.stream().map(Target::name).toList() + (gpu == null ? "" : ", " + gpu));
 
+        if (!Readiness.await(client, targets, READY_TIMEOUT)) {
+            System.exit(1);
+            return;
+        }
+
         Correctness.Report check = Correctness.check(client, targets, args.seed());
         check.minCosine().forEach((t, v) -> System.out.printf(Locale.ROOT, "Embeddings, min cosine vs reference: %s %.6f%n", t, v));
         check.maxScoreDiff().forEach((t, v) -> System.out.printf(Locale.ROOT,
                 "Rerank, max score difference vs reference: %s %.2e, planted document first: %s%n", t, v, check.sameTop().get(t)));
-        check.problems().forEach(p -> System.out.println("Problem: " + p));
+        List<String> failures = check.failures();
+        if (!failures.isEmpty()) {
+            // A speed comparison between servers that compute different things means nothing.
+            failures.forEach(f -> System.out.println("Correctness check failed: " + f));
+            System.exit(1);
+            return;
+        }
 
         List<Result> results = new ArrayList<>();
         for (Workload workload : args.workloads()) {

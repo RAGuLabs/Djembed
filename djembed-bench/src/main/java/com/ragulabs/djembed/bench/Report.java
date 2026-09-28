@@ -75,7 +75,7 @@ final class Report {
         String comparison = comparison(args, results);
         if (!comparison.isEmpty()) {
             md.append("\n## Djembed relative to TEI\n\n");
-            md.append("Throughput above 1.00× and p99 below 1.00× favour Djembed.\n\n");
+            md.append("Throughput above 1.00× and p99 below 1.00× favour Djembed. Runs where either server returned errors are not compared.\n\n");
             md.append("| workload | concurrency | throughput | p99 latency |\n|---|---:|---:|---:|\n");
             md.append(comparison);
         }
@@ -88,11 +88,16 @@ final class Report {
             for (int concurrency : args.concurrency()) {
                 Optional<Result> djembed = find(results, workload, concurrency, "djembed");
                 Optional<Result> tei = find(results, workload, concurrency, "tei");
-                if (djembed.isPresent() && tei.isPresent() && tei.get().requests() > 0) {
-                    rows.append(String.format(Locale.ROOT, "| %s | %d | %.2f× | %.2f× |%n", workload.label(), concurrency,
-                            djembed.get().requestsPerSecond() / tei.get().requestsPerSecond(),
-                            djembed.get().p99() / tei.get().p99()));
+                if (djembed.isEmpty() || tei.isEmpty()) {
+                    continue;
                 }
+                if (!valid(djembed.get()) || !valid(tei.get())) {
+                    rows.append(String.format(Locale.ROOT, "| %s | %d | invalid: errors | invalid: errors |%n", workload.label(), concurrency));
+                    continue;
+                }
+                rows.append(String.format(Locale.ROOT, "| %s | %d | %.2f× | %.2f× |%n", workload.label(), concurrency,
+                        djembed.get().requestsPerSecond() / tei.get().requestsPerSecond(),
+                        djembed.get().p99() / tei.get().p99()));
             }
         }
         return rows.toString();
@@ -104,6 +109,11 @@ final class Report {
             System.out.println("\n== Djembed relative to TEI (throughput > 1 and p99 < 1 favour Djembed)");
             System.out.print(comparison.replace("|", " ").replaceAll(" +", " ").replace("\n ", "\n"));
         }
+    }
+
+    /** A run is comparable only if every request succeeded: a server refusing work is not serving it faster. */
+    static boolean valid(Result result) {
+        return result.errors() == 0 && result.requests() > 0;
     }
 
     private static Optional<Result> find(List<Result> results, Workload workload, int concurrency, String target) {

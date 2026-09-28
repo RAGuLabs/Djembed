@@ -5,11 +5,12 @@ import java.util.Arrays;
 /**
  * Groups sequences into forward passes.
  *
- * <p>Every row of a batch is padded to the batch's longest sequence, so which sequences share a batch decides how
- * much padding the model computes on. Sequences are sorted by length and packed greedily while
- * {@code rows × longest ≤ tokenBudget} and {@code rows ≤ maxRows}: short inputs travel in wide batches, long ones in
- * narrow batches, and the padded tensor never exceeds the budget. A sequence longer than the budget on its own
- * still gets a batch of one.
+ * <p>Sequences are sorted by length and packed greedily. For a padded model every row is padded to the batch's
+ * longest sequence, so a batch holds sequences while {@code rows × longest ≤ tokenBudget}: short inputs travel in
+ * wide batches, long ones in narrow batches. A packed model computes no padding in its encoder, so the budget caps
+ * the real tokens instead, and only the cheap padded shape around the encoder is bounded, by
+ * {@code rows × longest ≤ paddedTokens}. Rows never exceed {@code maxRows}. A sequence longer than the budget on
+ * its own still gets a batch of one.
  *
  * <p>An instance keeps its working arrays between calls, so planning in steady state allocates nothing. Not
  * thread-safe.
@@ -22,7 +23,7 @@ public final class BatchPlanner {
     private int batches;
 
     /** Plans {@code lengths[0 .. count)}; the result stays valid until the next call. */
-    public void plan(int[] lengths, int count, int maxRows, long tokenBudget) {
+    public void plan(int[] lengths, int count, BatchLimits limits) {
         if (keys.length < count) {
             int capacity = Math.max(count, keys.length * 2);
             keys = new long[capacity];
@@ -35,10 +36,16 @@ public final class BatchPlanner {
         int from = 0;
         while (from < count) {
             int to = from + 1;
-            while (to < count
-                    && to - from < maxRows
-                    // ascending order: the candidate becomes the batch's longest
-                    && (long) (to - from + 1) * lengths[order[to]] <= tokenBudget) {
+            long real = lengths[order[from]];
+            while (to < count && to - from < limits.maxRows()) {
+                // Ascending order: the candidate becomes the batch's longest.
+                int length = lengths[order[to]];
+                long padded = (long) (to - from + 1) * length;
+                long cost = limits.packed() ? real + length : padded;
+                if (padded > limits.paddedTokens() || cost > limits.tokenBudget()) {
+                    break;
+                }
+                real += length;
                 to++;
             }
             starts[batches++] = from;

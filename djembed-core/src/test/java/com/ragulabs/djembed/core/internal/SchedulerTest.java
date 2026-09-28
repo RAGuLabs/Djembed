@@ -137,7 +137,8 @@ class SchedulerTest {
     }
 
     private Scheduler<int[], FakeJob> scheduler(int maxRows, int maxQueuedInputs) {
-        return new Scheduler<>("test", runner, maxRows, TOKEN_BUDGET, maxQueuedInputs, Runnable::run, EngineObserver.NONE);
+        return new Scheduler<>("test", runner, new BatchLimits(maxRows, TOKEN_BUDGET, false, TOKEN_BUDGET), maxQueuedInputs,
+                Runnable::run, EngineObserver.NONE);
     }
 
     /** A job of {@code sequences} sequences filling a whole batch each, named {@code name0, name1, …}. */

@@ -1,5 +1,8 @@
 # Djembed
 
+![maven-central](https://img.shields.io/maven-central/v/com.ragulabs.djembed/djembed-core?color=blue&label=release)
+![sonatype-nexus](https://img.shields.io/maven-metadata/v?label=snapshot&metadataUrl=https%3A%2F%2Fcentral.sonatype.com%2Frepository%2Fmaven-snapshots%2Fcom%2Fragulabs%2Fdjembed%2Fdjembed-core%2Fmaven-metadata.xml)
+
 Distributed Java Embeddings: an ONNX Runtime server for embedding and reranking models, exposing Cohere-compatible
 (`/v1/embed`, `/v2/embed`, `/v1/rerank`, `/v2/rerank`) and OpenAI-compatible (`/v1/embeddings`, `/v1/models`) HTTP APIs.
 
@@ -16,10 +19,11 @@ Distributed Java Embeddings: an ONNX Runtime server for embedding and reranking 
 | `models[].task` | — | `embed` or `rerank` |
 | `models[].path` | — | Model directory, relative to the config file |
 | `models[].device` | `cpu` | `cpu`, `cuda` or `cuda:N` |
-| `models[].max-batch-size` | `64` | Most sequences in one forward pass |
-| `models[].token-budget` | `16384` | Most `sequences × padded length` in one forward pass |
+| `models[].max-batch-size` | `1024` | Most sequences in one forward pass; `token-budget` is the limit that normally applies |
+| `models[].token-budget` | `16384` | Work per forward pass: `sequences × padded length`, or real tokens for models in ONNX Runtime packing mode (detected, no padding computed) |
 | `models[].max-input-tokens` | model limit | Tokens per sequence; lower it to bound attention memory |
 | `models[].max-queued-inputs` | `8192` | Texts/documents queued across requests before answering `503` |
+| `models[].tf32` | `true` | CUDA only: run float32 matrix multiplications as TensorFloat-32 on Ampere+ tensor cores; `false` for strict fp32 |
 | `models[].long-input` | `truncate` | Embed only: `truncate` or `chunk` (word-aligned windows, averaged) |
 | `models[].pooling` | from model | Embed only: `cls`, `mean` or `last_token`, for models without in-graph pooling |
 | `models[].normalize` | `true` | Embed only: L2-normalise vectors |
@@ -87,9 +91,10 @@ it. The options records mirror the `models[]` keys above.
 
 ## Benchmark against TEI
 
-`djembed-bench` sends identical, seeded requests to Djembed and to Text Embeddings Inference, both in float32 on the
-same GPU, and first checks that their outputs agree. Results go to `bench-results/<timestamp>/results.md` and
-`results.json`.
+`djembed-bench` sends identical, seeded requests to Djembed and to Text Embeddings Inference at the same precision on
+the same GPU, and first checks that their outputs agree. Results go to `bench-results/<timestamp>/results.md` and
+`results.json`. The default round is strict fp32; `BENCH_TEI_DTYPE=float16 BENCH_MODEL_SUFFIX=-fp16` runs the fp16
+round against fused fp16 exports (see the compose file).
 
 ```
 DJEMBED_MODELS=/path/to/models docker compose -f djembed-bench/docker-compose.yml up --build -d

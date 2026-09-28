@@ -11,6 +11,8 @@ import java.net.URI;
 import java.net.http.HttpRequest;
 import java.time.Duration;
 import java.util.List;
+import java.util.Objects;
+import java.util.stream.Stream;
 
 /**
  * A server under test. Embeddings go through the OpenAI-compatible {@code /v1/embeddings} on both servers, so the
@@ -34,6 +36,9 @@ sealed interface Target permits Target.Djembed, Target.Tei {
 
     /** Where JVM and engine metrics can be scraped, or {@code null}. */
     URI metrics();
+
+    /** Endpoints that answer 200 once the server is ready to serve. */
+    List<URI> health();
 
     static float[][] embeddings(JsonNode response) {
         JsonNode data = response.path("data");
@@ -109,6 +114,11 @@ sealed interface Target permits Target.Djembed, Target.Tei {
         public URI metrics() {
             return base.resolve("/metrics");
         }
+
+        @Override
+        public List<URI> health() {
+            return List.of(base.resolve("/health"));
+        }
     }
 
     /** TEI serves one model per instance, hence one base URI per task; either may be absent. */
@@ -149,6 +159,11 @@ sealed interface Target permits Target.Djembed, Target.Tei {
         @Override
         public URI metrics() {
             return null;
+        }
+
+        @Override
+        public List<URI> health() {
+            return Stream.of(embedBase, rerankBase).filter(Objects::nonNull).map(base -> base.resolve("/health")).toList();
         }
     }
 }

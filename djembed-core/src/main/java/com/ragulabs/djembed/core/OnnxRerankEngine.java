@@ -1,6 +1,7 @@
 package com.ragulabs.djembed.core;
 
 import ai.onnxruntime.TensorInfo;
+import com.ragulabs.djembed.core.internal.BatchLimits;
 import com.ragulabs.djembed.core.internal.BatchRunner;
 import com.ragulabs.djembed.core.internal.Encoded;
 import com.ragulabs.djembed.core.internal.HfTokenizer;
@@ -8,6 +9,7 @@ import com.ragulabs.djembed.core.internal.Job;
 import com.ragulabs.djembed.core.internal.Lifecycle;
 import com.ragulabs.djembed.core.internal.Limits;
 import com.ragulabs.djembed.core.internal.ModelDirectory;
+import com.ragulabs.djembed.core.internal.OnnxGraph;
 import com.ragulabs.djembed.core.internal.OnnxModel;
 import com.ragulabs.djembed.core.internal.Scheduler;
 import com.ragulabs.djembed.core.internal.Sequences;
@@ -44,7 +46,7 @@ public final class OnnxRerankEngine implements RerankEngine {
     private final ScoreActivation activation;
 
     private OnnxRerankEngine(String name, HfTokenizer tokenizer, OnnxModel model, Workspace workspace, int maxInputTokens,
-                             RerankOptions options, EngineObserver observer) {
+                             RerankOptions options, BatchLimits limits, EngineObserver observer) {
         this.tokenizer = tokenizer;
         this.model = model;
         this.workspace = workspace;
@@ -52,8 +54,7 @@ public final class OnnxRerankEngine implements RerankEngine {
         this.typeIds = model.takesTokenTypeIds();
         this.activation = options.activation();
         EngineOptions engine = options.engine();
-        this.scheduler = new Scheduler<>(name, new Runner(), engine.maxBatchSize(), engine.tokenBudget(),
-                engine.maxQueuedInputs(), CpuPool.executor(), observer);
+        this.scheduler = new Scheduler<>(name, new Runner(), limits, engine.maxQueuedInputs(), CpuPool.executor(), observer);
     }
 
     /**
@@ -75,14 +76,16 @@ public final class OnnxRerankEngine implements RerankEngine {
         OnnxModel model = null;
         Workspace workspace = null;
         try {
-            model = OnnxModel.load(dir.onnxFile(), engine.device());
+            model = OnnxModel.load(dir.onnxFile(), engine.device(), engine.tf32());
             String outputName = logitsOutput(model.outputs(), directory);
+            OnnxGraph.Attention attention = OnnxGraph.read(dir.onnxFile()).attention();
+            BatchLimits limits = Limits.batchLimits(engine, maxInputTokens, attention == OnnxGraph.Attention.PACKED);
             workspace = new Workspace(model, outputName, 1,
-                    Limits.tokenCapacity(engine, maxInputTokens), maxInputTokens, engine.maxBatchSize(), dir.padTokenId());
+                    Math.toIntExact(limits.paddedTokens()), maxInputTokens, engine.maxBatchSize(), dir.padTokenId());
             String name = directory.getFileName().toString();
-            log.info("Rerank engine {}: maxInputTokens={} output={} activation={}",
-                    name, maxInputTokens, outputName, options.activation());
-            return new OnnxRerankEngine(name, tokenizer, model, workspace, maxInputTokens, options, observer);
+            log.info("Rerank engine {}: maxInputTokens={} output={} activation={} attention={}",
+                    name, maxInputTokens, outputName, options.activation(), attention);
+            return new OnnxRerankEngine(name, tokenizer, model, workspace, maxInputTokens, options, limits, observer);
         } catch (RuntimeException e) {
             if (workspace != null) {
                 workspace.close();

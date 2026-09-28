@@ -1,6 +1,7 @@
 package com.ragulabs.djembed.core;
 
 import ai.onnxruntime.TensorInfo;
+import com.ragulabs.djembed.core.internal.BatchLimits;
 import com.ragulabs.djembed.core.internal.BatchRunner;
 import com.ragulabs.djembed.core.internal.Encoded;
 import com.ragulabs.djembed.core.internal.HfTokenizer;
@@ -8,6 +9,7 @@ import com.ragulabs.djembed.core.internal.Job;
 import com.ragulabs.djembed.core.internal.Lifecycle;
 import com.ragulabs.djembed.core.internal.Limits;
 import com.ragulabs.djembed.core.internal.ModelDirectory;
+import com.ragulabs.djembed.core.internal.OnnxGraph;
 import com.ragulabs.djembed.core.internal.OnnxModel;
 import com.ragulabs.djembed.core.internal.Scheduler;
 import com.ragulabs.djembed.core.internal.Sequences;
@@ -50,7 +52,8 @@ public final class OnnxEmbeddingEngine implements EmbeddingEngine {
     private final long[] suffix;
 
     private OnnxEmbeddingEngine(String name, HfTokenizer tokenizer, OnnxModel model, Workspace workspace, int dimension,
-                                int maxInputTokens, EmbeddingOptions options, PoolingMode pooling, EngineObserver observer) {
+                                int maxInputTokens, EmbeddingOptions options, PoolingMode pooling, BatchLimits limits,
+                                EngineObserver observer) {
         this.tokenizer = tokenizer;
         this.model = model;
         this.workspace = workspace;
@@ -62,8 +65,7 @@ public final class OnnxEmbeddingEngine implements EmbeddingEngine {
         this.prefix = tokenizer.prefix();
         this.suffix = tokenizer.suffix();
         EngineOptions engine = options.engine();
-        this.scheduler = new Scheduler<>(name, new Runner(), engine.maxBatchSize(), engine.tokenBudget(),
-                engine.maxQueuedInputs(), CpuPool.executor(), observer);
+        this.scheduler = new Scheduler<>(name, new Runner(), limits, engine.maxQueuedInputs(), CpuPool.executor(), observer);
     }
 
     /**
@@ -85,7 +87,7 @@ public final class OnnxEmbeddingEngine implements EmbeddingEngine {
         OnnxModel model = null;
         Workspace workspace = null;
         try {
-            model = OnnxModel.load(dir.onnxFile(), engine.device());
+            model = OnnxModel.load(dir.onnxFile(), engine.device(), engine.tf32());
             Map<String, TensorInfo> outputs = model.outputs();
 
             String outputName;
@@ -108,12 +110,16 @@ public final class OnnxEmbeddingEngine implements EmbeddingEngine {
                 throw new DjembedException("maxInputTokens " + maxInputTokens + " leaves no room for text");
             }
 
+            OnnxGraph.Attention attention = OnnxGraph.read(dir.onnxFile()).attention();
+            BatchLimits limits = Limits.batchLimits(engine, maxInputTokens, attention == OnnxGraph.Attention.PACKED);
             workspace = new Workspace(model, outputName, dimension,
-                    Limits.tokenCapacity(engine, maxInputTokens), maxInputTokens, engine.maxBatchSize(), dir.padTokenId());
+                    Math.toIntExact(limits.paddedTokens()), maxInputTokens, engine.maxBatchSize(), dir.padTokenId());
             String name = directory.getFileName().toString();
-            log.info("Embedding engine {}: dimension={} maxInputTokens={} output={} pooling={} longInput={}",
-                    name, dimension, maxInputTokens, outputName, pooling == null ? "in-graph" : pooling, options.longInput());
-            return new OnnxEmbeddingEngine(name, tokenizer, model, workspace, dimension, maxInputTokens, options, pooling, observer);
+            log.info("Embedding engine {}: dimension={} maxInputTokens={} output={} pooling={} longInput={} attention={}",
+                    name, dimension, maxInputTokens, outputName, pooling == null ? "in-graph" : pooling, options.longInput(),
+                    attention);
+            return new OnnxEmbeddingEngine(name, tokenizer, model, workspace, dimension, maxInputTokens, options, pooling,
+                    limits, observer);
         } catch (RuntimeException e) {
             if (workspace != null) {
                 workspace.close();

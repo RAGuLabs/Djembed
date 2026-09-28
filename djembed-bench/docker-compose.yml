@@ -4,9 +4,14 @@
 #   DJEMBED_MODELS=/path/to/models docker compose -f djembed-bench/docker-compose.yml up --build -d
 #   ./gradlew :djembed-bench:run --args="--djembed http://localhost:8080 --tei-embed http://localhost:8081 --tei-rerank http://localhost:8082 --gpu 0"
 #
-# DJEMBED_MODELS holds the fp32 ONNX exports (bge-m3/, bge-reranker-v2-m3/). TEI downloads the same models from the
-# Hugging Face Hub, pinned to a revision, and runs them in float32 too, so both sides do the same arithmetic.
-# Batching limits match: 16384 tokens per forward pass, 32 inputs per request. BENCH_GPU picks the device (default 0).
+# Precision round, the same on both sides:
+#   fp32 (default)  Djembed runs DJEMBED_MODELS/bge-m3 and bge-reranker-v2-m3 in strict fp32 (TF32 off, as TEI's fp32)
+#   fp16            BENCH_TEI_DTYPE=float16 BENCH_MODEL_SUFFIX=-fp16: Djembed runs the fused fp16 exports in
+#                   DJEMBED_MODELS/bge-m3-fp16 and bge-reranker-v2-m3-fp16, TEI its float16 (Flash Attention) path
+# TEI downloads the same models from the Hugging Face Hub, pinned to a revision.
+# Limits match: 16384 tokens per forward pass, 32 inputs per request, and 8192 inputs admitted at once (TEI counts
+# every input of a batch against --max-concurrent-requests, like Djembed's max-queued-inputs, whose default is 8192).
+# BENCH_GPU picks the device (default 0).
 
 x-gpu: &gpu
   deploy:
@@ -36,7 +41,8 @@ services:
     <<: *gpu
     image: ghcr.io/huggingface/text-embeddings-inference:86-1.9
     command: [ "--model-id", "BAAI/bge-m3", "--revision", "5617a9f61b028005a4858fdac845db406aefb181",
-               "--dtype", "float32", "--max-batch-tokens", "16384", "--max-client-batch-size", "32" ]
+               "--dtype", "${BENCH_TEI_DTYPE:-float32}", "--max-batch-tokens", "16384", "--max-client-batch-size", "32",
+               "--max-concurrent-requests", "8192" ]
     ports:
       - "8081:80"
     volumes:
@@ -46,7 +52,8 @@ services:
     <<: *gpu
     image: ghcr.io/huggingface/text-embeddings-inference:86-1.9
     command: [ "--model-id", "BAAI/bge-reranker-v2-m3", "--revision", "953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e",
-               "--dtype", "float32", "--max-batch-tokens", "16384", "--max-client-batch-size", "32" ]
+               "--dtype", "${BENCH_TEI_DTYPE:-float32}", "--max-batch-tokens", "16384", "--max-client-batch-size", "32",
+               "--max-concurrent-requests", "8192" ]
     ports:
       - "8082:80"
     volumes:
@@ -63,11 +70,15 @@ configs:
       models:
         - name: bge-m3
           task: embed
-          path: /models/bge-m3
+          path: /models/bge-m3${BENCH_MODEL_SUFFIX:-}
           device: cuda:0
+          tf32: false
           token-budget: 16384
+          max-batch-size: 1024
         - name: bge-reranker-v2-m3
           task: rerank
-          path: /models/bge-reranker-v2-m3
+          path: /models/bge-reranker-v2-m3${BENCH_MODEL_SUFFIX:-}
           device: cuda:0
+          tf32: false
           token-budget: 16384
+          max-batch-size: 1024

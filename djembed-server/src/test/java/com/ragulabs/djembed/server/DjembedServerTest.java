@@ -84,7 +84,7 @@ class DjembedServerTest {
     @Test
     void forwardPassesAreRecorded() {
         EngineObserver observer = metrics.observer("probe");
-        observer.forwardPass(4, 10, 25, 1_000_000);
+        observer.forwardPass(4, 25, 15, 1_000_000);
 
         String text = client.get("/metrics").aggregate().join().contentUtf8();
         assertTrue(text.contains("djembed_tokens_total{kind=\"real\",model=\"probe\"} 25.0"), text);

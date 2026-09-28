@@ -21,8 +21,8 @@ public final class Limits {
         return requested;
     }
 
-    /** Tokens the workspace must hold: the batch budget, and never less than one full-length row. */
-    public static int tokenCapacity(EngineOptions options, int maxInputTokens) {
-        return Math.max(options.tokenBudget(), maxInputTokens);
+    /** Batch limits for a model; see {@link BatchLimits}. */
+    public static BatchLimits batchLimits(EngineOptions options, int maxInputTokens, boolean packed) {
+        return BatchLimits.of(options.maxBatchSize(), options.tokenBudget(), maxInputTokens, packed);
     }
 }
