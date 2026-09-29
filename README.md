@@ -48,6 +48,22 @@ compatible APIs.
 
 See `djembed.example.yaml` and `docker/`. Prometheus metrics are served at `/metrics`.
 
+## Docker
+
+`ragulabs/djembed` on Docker Hub needs an NVIDIA GPU and the NVIDIA Container Toolkit. Models ready for it, fp16 in
+packing mode, are published as
+[`ragulabs-org/bge-m3-onnx-fp16-packed`](https://huggingface.co/ragulabs-org/bge-m3-onnx-fp16-packed) and
+[`ragulabs-org/bge-reranker-v2-m3-onnx-fp16-packed`](https://huggingface.co/ragulabs-org/bge-reranker-v2-m3-onnx-fp16-packed).
+
+```
+hf download ragulabs-org/bge-m3-onnx-fp16-packed --local-dir models/bge-m3
+hf download ragulabs-org/bge-reranker-v2-m3-onnx-fp16-packed --local-dir models/bge-reranker-v2-m3
+docker run --gpus all -p 8080:8080 -e DJEMBED_API_KEYS=change-me \
+  -v "$PWD/models:/models:ro" -v "$PWD/djembed.yaml:/etc/djembed/djembed.yaml:ro" ragulabs/djembed
+```
+
+with `djembed.yaml` as `djembed.example.yaml`, paths under `/models`.
+
 ## Using the core in a Java application
 
 `djembed-core` runs the same engines in-process. It needs Java 25 and either `onnxruntime` (CPU) or `onnxruntime_gpu`
