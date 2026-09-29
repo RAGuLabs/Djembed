@@ -78,13 +78,15 @@ public final class OnnxRerankEngine implements RerankEngine {
         try {
             model = OnnxModel.load(dir.onnxFile(), engine.device(), engine.tf32());
             String outputName = logitsOutput(model.outputs(), directory);
-            OnnxGraph.Attention attention = OnnxGraph.read(dir.onnxFile()).attention();
-            BatchLimits limits = Limits.batchLimits(engine, maxInputTokens, attention == OnnxGraph.Attention.PACKED);
+            OnnxGraph graph = OnnxGraph.read(dir.onnxFile());
+            OnnxGraph.Attention attention = graph.attention();
+            String precision = graph.halfPrecision() ? "fp16" : "fp32";
+            BatchLimits limits = Limits.batchLimits(engine, maxInputTokens, graph);
             workspace = new Workspace(model, outputName, 1,
                     Math.toIntExact(limits.paddedTokens()), maxInputTokens, engine.maxBatchSize(), dir.padTokenId());
             String name = directory.getFileName().toString();
-            log.info("Rerank engine {}: maxInputTokens={} output={} activation={} attention={}",
-                    name, maxInputTokens, outputName, options.activation(), attention);
+            log.info("Rerank engine {}: maxInputTokens={} output={} activation={} attention={} precision={}",
+                    name, maxInputTokens, outputName, options.activation(), attention, precision);
             return new OnnxRerankEngine(name, tokenizer, model, workspace, maxInputTokens, options, limits, observer);
         } catch (RuntimeException e) {
             if (workspace != null) {

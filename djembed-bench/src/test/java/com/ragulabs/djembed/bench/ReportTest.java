@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ReportTest {
 
-    private static final BenchArgs ARGS = new BenchArgs(null, null, null, null, "e", "r", List.of(Workload.INGEST),
+    private static final BenchArgs ARGS = new BenchArgs(null, null, null, null, null, "e", "r", List.of(Workload.INGEST),
             List.of(8, 32), Duration.ofSeconds(1), Duration.ofSeconds(10), 42, Path.of("out"), null);
 
     @Test
@@ -25,6 +25,20 @@ class ReportTest {
 
         assertTrue(md.contains("| ingest | 8 | 2.00× | 0.50× |"), md);
         assertTrue(md.contains("| ingest | 32 | invalid: errors | invalid: errors |"), md);
+    }
+
+    @Test
+    void everyCompetitorGetsItsOwnComparison() {
+        List<Result> results = List.of(
+                result("djembed", 8, 40, 0), result("tei", 8, 20, 0), result("infinity", 8, 10, 0));
+
+        String md = Report.markdown(ARGS, null, emptyCheck(), results);
+
+        assertTrue(md.startsWith("# Djembed vs TEI, Infinity"), md);
+        String tei = md.substring(md.indexOf("## Djembed relative to TEI"), md.indexOf("## Djembed relative to Infinity"));
+        String infinity = md.substring(md.indexOf("## Djembed relative to Infinity"));
+        assertTrue(tei.contains("| ingest | 8 | 2.00× | 0.50× |"), tei);
+        assertTrue(infinity.contains("| ingest | 8 | 4.00× | 0.25× |"), infinity);
     }
 
     @Test

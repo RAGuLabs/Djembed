@@ -10,6 +10,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class OnnxGraphTest {
 
@@ -17,8 +19,8 @@ class OnnxGraphTest {
     Path dir;
 
     @Test
-    void countsOperatorsUpToTheFirstWeight() throws IOException {
-        byte[] model = model(
+    void countsOperators() throws IOException {
+        byte[] model = model(FLOAT,
                 node("MatMul", ""), node("MatMul", ""), node("Attention", "com.microsoft"), node("Softmax", "ai.onnx"));
 
         OnnxGraph graph = OnnxGraph.parse(model);
@@ -26,15 +28,21 @@ class OnnxGraphTest {
         assertEquals(2, graph.count("MatMul"));
         assertEquals(1, graph.count("Softmax"));
         assertEquals(1, graph.count("com.microsoft.Attention"));
-        assertEquals(0, graph.count("Gather"), "nodes after the first initializer are never read");
         assertEquals(OnnxGraph.Attention.FUSED, graph.attention());
     }
 
     @Test
+    void precisionFollowsTheWeights() throws IOException {
+        assertTrue(OnnxGraph.parse(model(FLOAT16, node("MatMul", ""))).halfPrecision());
+        assertFalse(OnnxGraph.parse(model(FLOAT, node("MatMul", ""))).halfPrecision());
+        assertFalse(OnnxGraph.UNREADABLE.halfPrecision());
+    }
+
+    @Test
     void classifiesAttention() throws IOException {
-        assertEquals(OnnxGraph.Attention.PACKED, OnnxGraph.parse(model(
+        assertEquals(OnnxGraph.Attention.PACKED, OnnxGraph.parse(model(FLOAT,
                 node("RemovePadding", "com.microsoft"), node("PackedAttention", "com.microsoft"))).attention());
-        assertEquals(OnnxGraph.Attention.UNFUSED, OnnxGraph.parse(model(node("Softmax", ""))).attention());
+        assertEquals(OnnxGraph.Attention.UNFUSED, OnnxGraph.parse(model(FLOAT, node("Softmax", ""))).attention());
     }
 
     @Test
@@ -46,25 +54,43 @@ class OnnxGraphTest {
 
     @Test
     void readsFromFile() throws IOException {
-        Path file = Files.write(dir.resolve("model.onnx"), model(node("PackedAttention", "com.microsoft")));
+        Path file = Files.write(dir.resolve("model.onnx"), model(FLOAT16, node("PackedAttention", "com.microsoft")));
 
-        assertEquals(OnnxGraph.Attention.PACKED, OnnxGraph.read(file).attention());
+        OnnxGraph graph = OnnxGraph.read(file);
+        assertEquals(OnnxGraph.Attention.PACKED, graph.attention());
+        assertTrue(graph.halfPrecision());
     }
 
-    /** ModelProto { ir_version, producer_name, graph { nodes..., initializer, node Gather } }. */
-    private static byte[] model(byte[]... nodes) throws IOException {
+    private static final int FLOAT = 1;
+    private static final int FLOAT16 = 10;
+
+    /** ModelProto { ir_version, producer_name, graph { nodes..., two weights of {@code weightType}, one int64 } }. */
+    private static byte[] model(int weightType, byte[]... nodes) throws IOException {
         ByteArrayOutputStream graph = new ByteArrayOutputStream();
         for (byte[] node : nodes) {
             field(graph, 1, node);
         }
-        field(graph, 5, new byte[64]);                 // an initializer: reading stops here
-        field(graph, 1, node("Gather", ""));
+        field(graph, 5, weight(weightType, 4096));
+        field(graph, 5, weight(weightType, 4096));
+        field(graph, 5, weight(7, 8));
 
         ByteArrayOutputStream model = new ByteArrayOutputStream();
         model.write(new byte[]{0x08, 0x08});           // ir_version = 8 (varint field 1)
         field(model, 2, "test".getBytes(StandardCharsets.UTF_8));
         field(model, 7, graph.toByteArray());
         return model.toByteArray();
+    }
+
+    /** TensorProto { dims, data_type, name, raw_data }: the reader must skip the data. */
+    private static byte[] weight(int dataType, int bytes) throws IOException {
+        ByteArrayOutputStream tensor = new ByteArrayOutputStream();
+        tensor.write(0x08);                              // dims (varint field 1)
+        varint(tensor, bytes);
+        tensor.write(0x10);                              // data_type (varint field 2)
+        varint(tensor, dataType);
+        field(tensor, 8, "w".getBytes(StandardCharsets.UTF_8));
+        field(tensor, 9, new byte[bytes]);
+        return tensor.toByteArray();
     }
 
     private static byte[] node(String op, String domain) throws IOException {

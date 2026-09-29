@@ -1,14 +1,21 @@
 # The servers under test, all pinned to the same GPU. The benchmark loads one at a time.
 #
+# Pick the servers to compare, e.g. `up djembed tei-embed tei-rerank` or `up djembed infinity`.
+#
 # From the repository root:
 #   DJEMBED_MODELS=/path/to/models docker compose -f djembed-bench/docker-compose.yml up --build -d
 #   ./gradlew :djembed-bench:run --args="--djembed http://localhost:8080 --tei-embed http://localhost:8081 --tei-rerank http://localhost:8082 --gpu 0"
 #
 # Precision round, the same on both sides:
 #   fp32 (default)  Djembed runs DJEMBED_MODELS/bge-m3 and bge-reranker-v2-m3 in strict fp32 (TF32 off, as TEI's fp32)
-#   fp16            BENCH_TEI_DTYPE=float16 BENCH_MODEL_SUFFIX=-fp16-packed: Djembed runs the fused, packed fp16 models
-#                   that djembed-bench/export-fp16-packed.sh builds into DJEMBED_MODELS, TEI its float16 (Flash
-#                   Attention) path
+#   fp16            BENCH_MODEL_SUFFIX=-fp16-packed with BENCH_TEI_DTYPE=float16 or BENCH_INFINITY_DTYPE=float16:
+#                   Djembed runs the fused, packed fp16 models that `djembed-bench/export-packed.sh <dir> fp16` builds
+#                   into DJEMBED_MODELS; TEI and Infinity their float16 paths
+#
+# fp32 against Infinity: Infinity 0.0.77 always enables TF32 (infinity_emb/transformer/acceleration.py) and removes
+# padding through BetterTransformer's nested tensors, so Djembed matches it with BENCH_DJEMBED_TF32=true and
+# BENCH_MODEL_SUFFIX=-fp32-packed (`export-packed.sh <dir> fp32`). TEI 1.9 keeps fp32 strict (Candle's reduced-precision
+# f32 GEMM is off by default and TEI never enables it) and pads, hence the plain strict defaults above.
 # TEI downloads the same models from the Hugging Face Hub, pinned to a revision.
 # Limits match: 16384 tokens per forward pass, 32 inputs per request, and 8192 inputs admitted at once (TEI counts
 # every input of a batch against --max-concurrent-requests, like Djembed's max-queued-inputs, whose default is 8192).
@@ -60,8 +67,28 @@ services:
     volumes:
       - hf-cache:/data
 
+  # Infinity serves both models from one instance under their Hub ids. Precision follows BENCH_INFINITY_DTYPE
+  # (float32, or float16 for the fp16 round); everything else is Infinity's default: PyTorch engine, BetterTransformer,
+  # and batches of 32 sequences, its own limit (it batches by sequences, not tokens). Per-model flags are repeated,
+  # one value per --model-id.
+  infinity:
+    <<: *gpu
+    image: michaelf34/infinity:0.0.77
+    command: [ "v2",
+               "--model-id", "BAAI/bge-m3", "--revision", "5617a9f61b028005a4858fdac845db406aefb181",
+               "--model-id", "BAAI/bge-reranker-v2-m3", "--revision", "953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e",
+               "--dtype", "${BENCH_INFINITY_DTYPE:-float32}", "--dtype", "${BENCH_INFINITY_DTYPE:-float32}",
+               "--batch-size", "32", "--batch-size", "32",
+               "--engine", "torch", "--engine", "torch",
+               "--port", "7997" ]
+    ports:
+      - "8083:7997"
+    volumes:
+      - infinity-cache:/app/.cache
+
 volumes:
   hf-cache:
+  infinity-cache:
 
 configs:
   djembed:
@@ -73,13 +100,13 @@ configs:
           task: embed
           path: /models/bge-m3${BENCH_MODEL_SUFFIX:-}
           device: cuda:0
-          tf32: false
+          tf32: ${BENCH_DJEMBED_TF32:-false}
           token-budget: 16384
           max-batch-size: 1024
         - name: bge-reranker-v2-m3
           task: rerank
           path: /models/bge-reranker-v2-m3${BENCH_MODEL_SUFFIX:-}
           device: cuda:0
-          tf32: false
+          tf32: ${BENCH_DJEMBED_TF32:-false}
           token-budget: 16384
           max-batch-size: 1024

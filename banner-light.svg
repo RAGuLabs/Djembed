@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-labelledby="title desc">
+  <title id="title">Djembed</title>
+  <desc id="desc">A djembe drum beside the Djembed wordmark: Distributed Java Embeddings.</desc>
+  <rect width="1200" height="300" rx="16" fill="#FBF7F1"/>
+  <g transform="translate(205 150) rotate(17) scale(0.85) translate(-90 -160)">
+    <defs>
+      <clipPath id="bowl-light"><path d="M12 48 C12 112 60 140 66 170 L114 170 C120 140 168 112 168 48 Z"/></clipPath>
+      <clipPath id="foot-light"><path d="M64 182 L116 182 L140 294 Q90 306 40 294 Z"/></clipPath>
+    </defs>
+    <!-- bowl -->
+    <path d="M12 48 C12 112 60 140 66 170 L114 170 C120 140 168 112 168 48 Z" fill="#F46E4B"/>
+    <g clip-path="url(#bowl-light)">
+      <g fill="none" stroke="#B9502F" stroke-width="4.5" stroke-linecap="round">
+      <path d="M26 46.4 Q26 120 70 170"/>
+      <path d="M26 46.4 Q26 120 80 170"/>
+      <path d="M56 50.7 Q56 120 80 170"/>
+      <path d="M56 50.7 Q56 120 90 170"/>
+      <path d="M90 52.0 Q90 120 90 170"/>
+      <path d="M90 52.0 Q90 120 100 170"/>
+      <path d="M124 50.7 Q124 120 100 170"/>
+      <path d="M124 50.7 Q124 120 110 170"/>
+      <path d="M154 46.4 Q154 120 110 170"/>
+      </g>
+      <rect x="126" y="40" width="60" height="140" fill="#000" opacity="0.08"/>
+    </g>
+    <!-- foot -->
+    <path d="M64 182 L116 182 L140 294 Q90 306 40 294 Z" fill="#F46E4B"/>
+    <g clip-path="url(#foot-light)">
+      <rect x="0" y="206" width="180" height="10" fill="#FBD46A"/>
+      <rect x="0" y="216" width="180" height="42" fill="#5A6B84"/>
+      <path d="M52 216 L128 216 L94 256 Z" fill="#232E3D"/>
+      <rect x="0" y="258" width="180" height="10" fill="#FBD46A"/>
+      <rect x="118" y="176" width="60" height="140" fill="#000" opacity="0.10"/>
+    </g>
+    <!-- waist rings -->
+    <rect x="62" y="164" width="56" height="10" rx="5" fill="#FBD46A"/>
+    <rect x="60" y="174" width="60" height="10" rx="5" fill="#F0B44A"/>
+    <!-- head -->
+    <path d="M12 30 L12 48 A78 16 0 0 0 168 48 L168 30 Z" fill="#F0B44A"/>
+    <ellipse cx="90" cy="30" rx="78" ry="16" fill="#FBD46A"/>
+    <circle cx="26" cy="46.4" r="4.5" fill="#2B3445"/>
+    <circle cx="56" cy="50.7" r="4.5" fill="#2B3445"/>
+    <circle cx="90" cy="52.0" r="4.5" fill="#2B3445"/>
+    <circle cx="124" cy="50.7" r="4.5" fill="#2B3445"/>
+    <circle cx="154" cy="46.4" r="4.5" fill="#2B3445"/>
+  </g>
+  <text x="360" y="150" font-family="Inter, system-ui, -apple-system, Segoe UI, sans-serif" font-size="86" font-weight="800" letter-spacing="-1.5" fill="#1F1A17">Djembed</text>
+  <text x="364" y="198" font-family="Inter, system-ui, -apple-system, Segoe UI, sans-serif" font-size="26" font-weight="600" fill="#D95A38">Distributed Java Embeddings</text>
+  <text x="364" y="238" font-family="Inter, system-ui, -apple-system, Segoe UI, sans-serif" font-size="18" fill="#6B5E55">Embedding and reranking server · Cohere and OpenAI APIs · ONNX Runtime on the JVM</text>
+</svg>

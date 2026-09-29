@@ -22,7 +22,8 @@ public final class Limits {
     }
 
     /** Batch limits for a model; see {@link BatchLimits}. */
-    public static BatchLimits batchLimits(EngineOptions options, int maxInputTokens, boolean packed) {
-        return BatchLimits.of(options.maxBatchSize(), options.tokenBudget(), maxInputTokens, packed);
+    public static BatchLimits batchLimits(EngineOptions options, int maxInputTokens, OnnxGraph graph) {
+        return BatchLimits.of(options.maxBatchSize(), options.tokenBudget(), maxInputTokens,
+                graph.attention() == OnnxGraph.Attention.PACKED, graph.halfPrecision());
     }
 }

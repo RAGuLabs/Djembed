@@ -34,6 +34,19 @@ class BenchArgsTest {
     }
 
     @Test
+    void infinityServesBothModelsUnderTheirHubIds() {
+        BenchArgs args = BenchArgs.parse(new String[]{"--djembed", "http://gpu:8080", "--infinity", "http://gpu:8083/"});
+
+        Target.Infinity infinity = assertInstanceOf(Target.Infinity.class, args.targets().get(1));
+        assertEquals("http://gpu:8083", infinity.base().toString());
+        assertEquals("BAAI/bge-m3", infinity.embedModel());
+        assertEquals("BAAI/bge-reranker-v2-m3", infinity.rerankModel());
+        assertEquals(true, infinity.supports(Workload.RERANK));
+        assertEquals("/embeddings", infinity.embed(List.of("a")).uri().getPath());
+        assertEquals("/rerank", infinity.rerank("q", List.of("a")).uri().getPath());
+    }
+
+    @Test
     void rejectsBadInput() {
         assertThrows(IllegalArgumentException.class, () -> BenchArgs.parse(new String[]{}));
         assertThrows(IllegalArgumentException.class, () -> BenchArgs.parse(new String[]{"--djembed"}));

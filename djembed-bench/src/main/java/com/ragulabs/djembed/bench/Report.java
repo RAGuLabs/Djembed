@@ -46,7 +46,8 @@ final class Report {
 
     static String markdown(BenchArgs args, String gpu, Correctness.Report check, List<Result> results) {
         StringBuilder md = new StringBuilder();
-        md.append("# Djembed vs TEI\n\n");
+        md.append("# Djembed vs ").append(String.join(", ", competitors(results).stream().map(Report::label).toList()))
+                .append("\n\n");
         md.append("- GPU: ").append(gpu == null ? "not sampled" : gpu).append('\n');
         md.append("- Java ").append(Runtime.version()).append(", seed ").append(args.seed())
                 .append(", warm-up ").append(args.warmup().toSeconds()).append(" s, measured ")
@@ -72,9 +73,12 @@ final class Report {
             }
         }
 
-        String comparison = comparison(args, results);
-        if (!comparison.isEmpty()) {
-            md.append("\n## Djembed relative to TEI\n\n");
+        for (String competitor : competitors(results)) {
+            String comparison = comparison(args, results, competitor);
+            if (comparison.isEmpty()) {
+                continue;
+            }
+            md.append("\n## Djembed relative to ").append(label(competitor)).append("\n\n");
             md.append("Throughput above 1.00× and p99 below 1.00× favour Djembed. Runs where either server returned errors are not compared.\n\n");
             md.append("| workload | concurrency | throughput | p99 latency |\n|---|---:|---:|---:|\n");
             md.append(comparison);
@@ -82,32 +86,47 @@ final class Report {
         return md.toString();
     }
 
-    private static String comparison(BenchArgs args, List<Result> results) {
+    /** The other servers in the run, in the order they were measured. */
+    static List<String> competitors(List<Result> results) {
+        return results.stream().map(Result::target).filter(t -> !t.equals("djembed")).distinct().toList();
+    }
+
+    static String label(String target) {
+        return switch (target) {
+            case "tei" -> "TEI";
+            case "infinity" -> "Infinity";
+            default -> target;
+        };
+    }
+
+    private static String comparison(BenchArgs args, List<Result> results, String competitor) {
         StringBuilder rows = new StringBuilder();
         for (Workload workload : args.workloads()) {
             for (int concurrency : args.concurrency()) {
                 Optional<Result> djembed = find(results, workload, concurrency, "djembed");
-                Optional<Result> tei = find(results, workload, concurrency, "tei");
-                if (djembed.isEmpty() || tei.isEmpty()) {
+                Optional<Result> other = find(results, workload, concurrency, competitor);
+                if (djembed.isEmpty() || other.isEmpty()) {
                     continue;
                 }
-                if (!valid(djembed.get()) || !valid(tei.get())) {
+                if (!valid(djembed.get()) || !valid(other.get())) {
                     rows.append(String.format(Locale.ROOT, "| %s | %d | invalid: errors | invalid: errors |%n", workload.label(), concurrency));
                     continue;
                 }
                 rows.append(String.format(Locale.ROOT, "| %s | %d | %.2f× | %.2f× |%n", workload.label(), concurrency,
-                        djembed.get().requestsPerSecond() / tei.get().requestsPerSecond(),
-                        djembed.get().p99() / tei.get().p99()));
+                        djembed.get().requestsPerSecond() / other.get().requestsPerSecond(),
+                        djembed.get().p99() / other.get().p99()));
             }
         }
         return rows.toString();
     }
 
     static void summary(BenchArgs args, List<Result> results) {
-        String comparison = comparison(args, results);
-        if (!comparison.isEmpty()) {
-            System.out.println("\n== Djembed relative to TEI (throughput > 1 and p99 < 1 favour Djembed)");
-            System.out.print(comparison.replace("|", " ").replaceAll(" +", " ").replace("\n ", "\n"));
+        for (String competitor : competitors(results)) {
+            String comparison = comparison(args, results, competitor);
+            if (!comparison.isEmpty()) {
+                System.out.println("\n== Djembed relative to " + label(competitor) + " (throughput > 1 and p99 < 1 favour Djembed)");
+                System.out.print(comparison.replace("|", " ").replaceAll(" +", " ").replace("\n ", "\n"));
+            }
         }
     }
 

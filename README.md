@@ -1,10 +1,22 @@
-# Djembed
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="banner-dark.svg">
+  <img alt="Djembed" src="banner-light.svg">
+</picture>
 
 ![maven-central](https://img.shields.io/maven-central/v/com.ragulabs.djembed/djembed-core?color=blue&label=release)
 ![sonatype-nexus](https://img.shields.io/maven-metadata/v?label=snapshot&metadataUrl=https%3A%2F%2Fcentral.sonatype.com%2Frepository%2Fmaven-snapshots%2Fcom%2Fragulabs%2Fdjembed%2Fdjembed-core%2Fmaven-metadata.xml)
 
-Distributed Java Embeddings: an ONNX Runtime server for embedding and reranking models, exposing Cohere-compatible
-(`/v1/embed`, `/v2/embed`, `/v1/rerank`, `/v2/rerank`) and OpenAI-compatible (`/v1/embeddings`, `/v1/models`) HTTP APIs.
+Distributed Java Embeddings: an ONNX Runtime server for embedding and reranking models, with Cohere and OpenAI
+compatible APIs.
+
+## Why
+
+- **One server, both standards.** Cohere `/v1|v2/embed` and `/v1|v2/rerank`, OpenAI `/v1/embeddings` and
+  `/v1/models`: existing Cohere and OpenAI clients work unchanged, for embeddings and reranking alike.
+- **No performance trade-off.** On the same GPU, up to 1.8× the throughput of Text Embeddings Inference and 6× that
+  of Infinity, never more than 15% behind (see [Benchmark](#benchmark)).
+- **Java end to end.** Server and embeddable library on the JVM, no Python runtime: off-heap buffers, batching across
+  requests, any ONNX model on CPU or CUDA.
 
 ## Configuration
 
@@ -12,35 +24,34 @@ Distributed Java Embeddings: an ONNX Runtime server for embedding and reranking 
 |---|---|---|
 | `server.host` | `0.0.0.0` | Bind address |
 | `server.port` | `8080` | HTTP port |
-| `server.max-request-bytes` | `33554432` | Largest accepted request body |
-| `server.request-timeout-ms` | `60000` | Per-request timeout, queueing included; `0` disables it |
-| `server.api-keys` | none | Bearer tokens accepted on the API routes; none leaves the API open. `/health` and `/metrics` stay open |
-| `models[].name` | — | Name clients pass in the `model` request field |
+| `server.max-request-bytes` | `33554432` | Largest request body |
+| `server.request-timeout-ms` | `60000` | Per request, queueing included; `0` disables it |
+| `server.api-keys` | none | Accepted bearer tokens; none leaves the API open (`/health`, `/metrics` always are) |
+| `models[].name` | — | Value of the `model` request field |
 | `models[].task` | — | `embed` or `rerank` |
 | `models[].path` | — | Model directory, relative to the config file |
 | `models[].device` | `cpu` | `cpu`, `cuda` or `cuda:N` |
-| `models[].max-batch-size` | `1024` | Most sequences in one forward pass; `token-budget` is the limit that normally applies |
-| `models[].token-budget` | `16384` | Work per forward pass: `sequences × padded length`, or real tokens for models in ONNX Runtime packing mode (detected, no padding computed) |
+| `models[].max-batch-size` | `1024` | Sequences per forward pass |
+| `models[].token-budget` | `16384` | Tokens per forward pass, padding included unless the model is in ONNX Runtime packing mode |
 | `models[].max-input-tokens` | model limit | Tokens per sequence; lower it to bound attention memory |
-| `models[].max-queued-inputs` | `8192` | Texts/documents queued across requests before answering `503` |
-| `models[].tf32` | `true` | CUDA only: run float32 matrix multiplications as TensorFloat-32 on Ampere+ tensor cores; `false` for strict fp32 |
-| `models[].long-input` | `truncate` | Embed only: `truncate` or `chunk` (word-aligned windows, averaged) |
-| `models[].pooling` | from model | Embed only: `cls`, `mean` or `last_token`, for models without in-graph pooling |
-| `models[].normalize` | `true` | Embed only: L2-normalise vectors |
-| `models[].activation` | `sigmoid` | Rerank only: `sigmoid` or `none` (raw logit) |
+| `models[].max-queued-inputs` | `8192` | Inputs queued before answering `503` |
+| `models[].tf32` | `true` | CUDA: TensorFloat-32 matrix multiplications; `false` for strict fp32 |
+| `models[].long-input` | `truncate` | Embed: `truncate`, or `chunk` into averaged windows |
+| `models[].pooling` | from model | Embed: `cls`, `mean` or `last_token`, when the graph does not pool |
+| `models[].normalize` | `true` | Embed: L2-normalise vectors |
+| `models[].activation` | `sigmoid` | Rerank: `sigmoid` or `none` (raw logit) |
 
 | Environment variable | Description |
 |---|---|
-| `DJEMBED_CONFIG` | Config file, when no CLI argument is given (default `./djembed.yaml`) |
+| `DJEMBED_CONFIG` | Config file when no CLI argument is given (default `./djembed.yaml`) |
 | `DJEMBED_API_KEYS` | Comma-separated API keys, added to `server.api-keys` |
 
-See `djembed.example.yaml`. Prometheus metrics are served at `/metrics`.
+See `djembed.example.yaml` and `docker/`. Prometheus metrics are served at `/metrics`.
 
 ## Using the core in a Java application
 
-`djembed-core` runs the same engines in-process, without the server: tokenization, length-sorted batching across
-concurrent callers, and inference. It needs Java 25 and one ONNX Runtime artifact of your choice, `onnxruntime`
-(CPU) or `onnxruntime_gpu` (CUDA 12 and cuDNN 9, CPU included).
+`djembed-core` runs the same engines in-process. It needs Java 25 and either `onnxruntime` (CPU) or `onnxruntime_gpu`
+(CUDA 12, cuDNN 9).
 
 ```groovy
 dependencies {
@@ -63,8 +74,8 @@ dependencies {
 </dependency>
 ```
 
-Snapshots (`0.1.0-SNAPSHOT`) are published to `https://central.sonatype.com/repository/maven-snapshots/`.
-Run the JVM with `--enable-native-access=ALL-UNNAMED`.
+Snapshots are at `https://central.sonatype.com/repository/maven-snapshots/`. Run the JVM with
+`--enable-native-access=ALL-UNNAMED`.
 
 ```java
 EngineOptions gpu = EngineOptions.defaults().withDevice(Device.cuda(0));
@@ -85,74 +96,58 @@ try (EmbeddingEngine embedder = OnnxEmbeddingEngine.load(Path.of("models/bge-m3"
 }
 ```
 
-Engines are thread-safe: load one per model and share it, so concurrent calls are batched together. A model folder
-holds `model.onnx` (or `onnx/model.onnx`), `tokenizer.json` and `config.json`; token limit and pooling are read from
-it. The options records mirror the `models[]` keys above.
+Engines are thread-safe: share one per model and concurrent calls are batched together. A model directory holds
+`model.onnx` (or `onnx/model.onnx`), `tokenizer.json` and `config.json`. The options records mirror the `models[]`
+keys.
 
-## Benchmark against TEI
+## Benchmark
 
-`djembed-bench` sends identical, seeded requests to Djembed and to Text Embeddings Inference at the same precision on
-the same GPU, and first checks that their outputs agree. Results go to `bench-results/<timestamp>/results.md` and
-`results.json`. The default round is strict fp32; `BENCH_TEI_DTYPE=float16 BENCH_MODEL_SUFFIX=-fp16-packed` runs the
-fp16 round, against the fused, packed fp16 models built by `djembed-bench/export-fp16-packed.sh <models dir>`.
+`djembed-bench` sends identical, seeded requests to each server at the same precision on the same GPU, after checking
+that their outputs agree. Each round mirrors what the other server computes (see `djembed-bench/docker-compose.yml`):
+strict fp32 against TEI by default; fp16 with `BENCH_MODEL_SUFFIX=-fp16-packed` and `BENCH_TEI_DTYPE=float16` or
+`BENCH_INFINITY_DTYPE=float16`. Packed models are built by `djembed-bench/export-packed.sh <models dir> <fp16|fp32>`.
 
 ```
-DJEMBED_MODELS=/path/to/models docker compose -f djembed-bench/docker-compose.yml up --build -d
+# against TEI
+DJEMBED_MODELS=/path/to/models docker compose -f djembed-bench/docker-compose.yml up --build -d djembed tei-embed tei-rerank
 ./gradlew :djembed-bench:run --args="--djembed http://localhost:8080 --tei-embed http://localhost:8081 --tei-rerank http://localhost:8082 --gpu 0"
+
+# against Infinity
+DJEMBED_MODELS=/path/to/models docker compose -f djembed-bench/docker-compose.yml up --build -d djembed infinity
+./gradlew :djembed-bench:run --args="--djembed http://localhost:8080 --infinity http://localhost:8083 --gpu 0"
 ```
 
 | Option | Default | Description |
 |---|---|---|
-| `--workloads` | `query,ingest,rerank` | 1 short text; 32 passages; a query with 32 documents |
+| `--workloads` | `query,ingest,rerank` | 1 short text; 32 passages; a query and 32 documents |
 | `--concurrency` | `1,8,32,128` | Closed-loop clients |
 | `--warmup` / `--duration` | `15s` / `60s` | Per run |
 | `--seed` | `42` | Corpus seed |
-| `--gpu` | none | GPU index to sample with `nvidia-smi` (run on the GPU host) |
+| `--gpu` | none | GPU to sample with `nvidia-smi` (on the GPU host) |
 | `--api-key` | none | Djembed API key |
 
 ### Results
 
-RTX 3090 Ti, Djembed 0.1.0 against TEI 1.9 (`86-1.9`), `BAAI/bge-m3@5617a9f` and `BAAI/bge-reranker-v2-m3@953dc6f`.
-Both servers batch up to 16384 tokens per forward pass, accept 32 inputs per request and admit 8192 queued inputs;
-warm-up 15 s, measured 60 s per run, seed 42. Before any load, both servers' outputs agree: embedding cosine ≥ 0.99994,
-rerank scores within 0.0032.
+RTX 3090 Ti, Djembed 0.1.0, TEI 1.9, Infinity 0.0.77 (torch engine), `BAAI/bge-m3@5617a9f` and
+`BAAI/bge-reranker-v2-m3@953dc6f`. Outputs agree: embedding cosine ≥ 0.99994, rerank scores within 0.0037.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="djembed-bench/results/throughput-dark.svg">
-  <img alt="Requests per second of Djembed and TEI for query, ingest and rerank by concurrent clients, strict fp32 and fp16" src="djembed-bench/results/throughput-light.svg">
+  <img alt="Requests per second of Djembed, TEI and Infinity for query, ingest and rerank by concurrent clients, fp16 and strict fp32" src="djembed-bench/results/throughput-light.svg">
 </picture>
 
-Djembed relative to TEI, as throughput · p99 latency by concurrent clients: throughput above 1.00× and p99 below 1.00×
-favour Djembed.
+Djembed throughput relative to each server at 1 / 8 / 32 / 128 concurrent clients:
 
-| fp32 | 1 | 8 | 32 | 128 |
-|---|---:|---:|---:|---:|
-| query | 0.85× · 1.44× | 1.24× · 0.83× | 1.42× · 0.75× | 1.59× · 0.65× |
-| ingest | 0.97× · 0.97× | 1.52× · 0.95× | 1.54× · 0.72× | 1.71× · 0.67× |
-| rerank | 0.96× · 0.93× | 1.33× · 0.75× | 1.46× · 0.73× | 1.78× · 0.73× |
+| | TEI fp16 | Infinity fp16 | TEI strict fp32 |
+|---|---|---|---|
+| query | 1.11 / 1.46 / 1.33 / 1.18× | 5.96 / 4.50 / 5.48 / 5.90× | 0.85 / 1.24 / 1.42 / 1.59× |
+| ingest | 1.11 / 1.03 / 1.04 / 1.04× | 1.15 / 1.05 / 1.06 / 1.08× | 0.97 / 1.52 / 1.54 / 1.71× |
+| rerank | 1.12 / 1.02 / 1.02 / 0.98× | 1.17 / 1.03 / 1.09 / 1.03× | 0.96 / 1.33 / 1.46 / 1.78× |
 
-| fp16 | 1 | 8 | 32 | 128 |
-|---|---:|---:|---:|---:|
-| query | 1.11× · 0.91× | 1.46× · 0.77× | 1.33× · 0.80× | 1.18× · 0.86× |
-| ingest | 1.11× · 0.93× | 1.03× · 0.88× | 1.04× · 1.11× | 1.04× · 1.14× |
-| rerank | 1.12× · 0.89× | 1.02× · 0.80× | 1.02× · 1.07× | 0.98× · 1.17× |
+- **fp16**: all three skip padding and meet the GPU's fp16 ceiling on batches; Djembed leads on per-request overhead,
+  most on short queries, where Infinity keeps the GPU under 50% busy.
+- **strict fp32**: both pad; Djembed batches across requests by length, computing less padding.
 
-Reading the numbers:
-
-- **fp32** is strict on both sides: TEI `--dtype float32`, Djembed `tf32: false` on plain ONNX exports (Djembed's
-  default TF32 is faster still, but not like for like). Both pad every batch here, so the difference is scheduling:
-  Djembed batches across requests and packs sequences of similar length together, so it computes less padding and,
-  on ingest, keeps the GPU at 100% where TEI sits at 93–94%. With one client there is nothing to batch and the two
-  are close (0.85–0.97×); from 8 clients up Djembed pulls ahead, to 1.59–1.78× at 128 with about a third lower p99.
-  Ingest peaks at 30 k tokens/s against 19 k.
-- **fp16** pits TEI's float16 path, with Flash Attention, against Djembed on fused fp16 models in ONNX Runtime
-  packing mode (built by `export-fp16-packed.sh`). Both now run attention on real tokens only, so from 8 clients up
-  both keep the GPU at 100% on ingest and rerank, and throughput meets the card's fp16 ceiling: ingest settles at
-  106–108 k tokens/s for Djembed and 103 k for TEI, and no scheduler can go much past that. What remains is per-request overhead, where
-  Djembed leads: query at 1.11–1.46×, and 1.11–1.12× for single-client ingest and rerank.
-- **p99 under saturation**: at 32 and 128 clients Djembed's p99 on ingest and rerank is 7–17% higher. Its scheduler
-  gives every waiting request a fair share of each round, so a search query overtakes a large ingestion batch instead
-  of queueing behind it; with identical requests only, the same fairness spreads completion times a little wider.
-
-Full tables, absolute throughput and latency percentiles included:
-[fp32](djembed-bench/results/2026-09-29-rtx3090ti-fp32.md), [fp16](djembed-bench/results/2026-09-29-rtx3090ti-fp16.md).
+Latencies and full tables: [TEI fp16](djembed-bench/results/2026-09-29-rtx3090ti-tei-fp16.md),
+[TEI fp32](djembed-bench/results/2026-09-29-rtx3090ti-tei-fp32.md),
+[Infinity fp16](djembed-bench/results/2026-09-29-rtx3090ti-infinity-fp16.md).

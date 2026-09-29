@@ -18,6 +18,19 @@ import java.util.Map;
  */
 public final class HfTokenizer implements AutoCloseable {
 
+    /** DJL setting choosing the native tokenizer build; read as environment variable first, then system property. */
+    static final String FLAVOR_SETTING = "RUST_FLAVOR";
+
+    // Must run before TokenizersLibrary loads, i.e. before the LIB field below: static initialisers run in order.
+    // With CUDA present DJL otherwise picks its CUDA build (e.g. cu122), which is not in the jar and is downloaded on
+    // every fresh container. Tokenization runs on the CPU pool, so the CPU build bundled in the jar is the one wanted.
+    // An explicit RUST_FLAVOR, as environment variable or property, still wins.
+    static {
+        if (System.getenv(FLAVOR_SETTING) == null && System.getProperty(FLAVOR_SETTING) == null) {
+            System.setProperty(FLAVOR_SETTING, "cpu");
+        }
+    }
+
     private static final TokenizersLibrary LIB = TokenizersLibrary.LIB;
 
     private final HuggingFaceTokenizer tokenizer;

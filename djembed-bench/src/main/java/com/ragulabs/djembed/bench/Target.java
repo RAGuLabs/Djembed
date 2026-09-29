@@ -18,7 +18,7 @@ import java.util.stream.Stream;
  * A server under test. Embeddings go through the OpenAI-compatible {@code /v1/embeddings} on both servers, so the
  * request and response bytes are the same shape; reranking uses each server's own endpoint.
  */
-sealed interface Target permits Target.Djembed, Target.Tei {
+sealed interface Target permits Target.Djembed, Target.Tei, Target.Infinity {
 
     ObjectMapper JSON = new ObjectMapper();
     Duration TIMEOUT = Duration.ofMinutes(2);
@@ -113,6 +113,55 @@ sealed interface Target permits Target.Djembed, Target.Tei {
         @Override
         public URI metrics() {
             return base.resolve("/metrics");
+        }
+
+        @Override
+        public List<URI> health() {
+            return List.of(base.resolve("/health"));
+        }
+    }
+
+    /**
+     * Infinity serves both models from one instance, under their Hugging Face ids. Its {@code /rerank} answers in the
+     * Cohere shape ({@code results[].index}, {@code relevance_score}).
+     */
+    record Infinity(URI base, String embedModel, String rerankModel) implements Target {
+
+        @Override
+        public String name() {
+            return "infinity";
+        }
+
+        @Override
+        public boolean supports(Workload workload) {
+            return true;
+        }
+
+        @Override
+        public HttpRequest embed(List<String> texts) {
+            return post(base.resolve("/embeddings"), openAiEmbeddings(embedModel, texts), null);
+        }
+
+        @Override
+        public HttpRequest rerank(String query, List<String> documents) {
+            ObjectNode body = JSON.createObjectNode().put("model", rerankModel).put("query", query);
+            ArrayNode docs = body.putArray("documents");
+            documents.forEach(docs::add);
+            return post(base.resolve("/rerank"), body, null);
+        }
+
+        @Override
+        public float[] scores(JsonNode response, int documents) {
+            float[] scores = new float[documents];
+            for (JsonNode result : response.path("results")) {
+                scores[result.path("index").asInt()] = (float) result.path("relevance_score").asDouble();
+            }
+            return scores;
+        }
+
+        @Override
+        public URI metrics() {
+            return null;
         }
 
         @Override

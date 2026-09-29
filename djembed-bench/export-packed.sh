@@ -1,16 +1,23 @@
 #!/usr/bin/env bash
-# Builds the fp16 models of the benchmark's fp16 round: bge-m3 and bge-reranker-v2-m3, from the Hugging Face revisions
-# TEI serves, exported with classic attention, fused and converted to fp16 by ONNX Runtime's transformer optimizer,
-# then converted to its packing mode (PackedAttention: the encoder computes no padding).
+# Builds the packed models of the benchmark: bge-m3 and bge-reranker-v2-m3, from the Hugging Face revisions TEI serves,
+# exported with classic attention, fused (and for fp16, converted) by ONNX Runtime's transformer optimizer, then
+# converted to its packing mode (PackedAttention: the encoder computes no padding).
 #
-#   djembed-bench/export-fp16-packed.sh <models dir>
+#   djembed-bench/export-packed.sh <models dir> [fp16|fp32]
 #
-# Creates <models dir>/bge-m3-fp16-packed and <models dir>/bge-reranker-v2-m3-fp16-packed. Needs Python 3.9–3.11
+# Creates <models dir>/bge-m3-<precision>-packed and <models dir>/bge-reranker-v2-m3-<precision>-packed (default fp16).
+# Needs Python 3.9–3.11
 # (PyTorch 2.1.2 has no wheels for later versions; override with PYTHON=python3.11) and about 15 GB of free disk for
 # the downloads and intermediate models, kept in WORK_DIR (default: a new temporary directory). Runs on CPU.
 set -euo pipefail
 
-OUT=${1:?usage: $0 <models dir>}
+OUT=${1:?usage: $0 <models dir> [fp16|fp32]}
+PRECISION=${2:-fp16}
+case $PRECISION in
+  fp16) CONVERT=(--float16) ;;
+  fp32) CONVERT=() ;;
+  *) echo "precision must be fp16 or fp32, got $PRECISION" >&2; exit 1 ;;
+esac
 HERE=$(cd "$(dirname "$0")" && pwd)
 PYTHON=${PYTHON:-python3}
 WORK=${WORK_DIR:-$(mktemp -d -t djembed-export-XXXXXX)}
@@ -47,19 +54,19 @@ for entry in "${MODELS[@]}"; do
   read -r name task repo revision <<< "$entry"
   echo "== $name"
   fp32="$WORK/$name-fp32"
-  fp16="$WORK/$name-fp16"
-  packed="$OUT/$name-fp16-packed"
-  mkdir -p "$fp16" "$packed"
+  fused="$WORK/$name-$PRECISION"
+  packed="$OUT/$name-$PRECISION-packed"
+  mkdir -p "$fused" "$packed"
 
   "$EXPORT_PY" "$HERE/export/export_onnx.py" --task "$task" --repo "$repo" --revision "$revision" --out "$fp32"
   "$OPTIMIZE_PY" "$HERE/export/verify_export.py" "$fp32"
 
   # XLM-RoBERTa large matches the optimizer's BERT patterns: 16 heads, hidden size 1024.
   "$OPTIMIZE_PY" -m onnxruntime.transformers.optimizer \
-      --input "$fp32/model.onnx" --output "$fp16/model.onnx" \
-      --model_type bert --num_heads 16 --hidden_size 1024 --opt_level 0 --float16 --use_external_data_format
+      --input "$fp32/model.onnx" --output "$fused/model.onnx" \
+      --model_type bert --num_heads 16 --hidden_size 1024 --opt_level 0 "${CONVERT[@]}" --use_external_data_format
   "$OPTIMIZE_PY" -m onnxruntime.transformers.convert_to_packing_mode \
-      --input "$fp16/model.onnx" --output "$packed/model.onnx" --use_external_data_format
+      --input "$fused/model.onnx" --output "$packed/model.onnx" --use_external_data_format
 
   for file in config.json tokenizer.json tokenizer_config.json special_tokens_map.json sentencepiece.bpe.model; do
     if [ -f "$fp32/$file" ]; then cp "$fp32/$file" "$packed/"; fi
@@ -68,4 +75,4 @@ for entry in "${MODELS[@]}"; do
   "$OPTIMIZE_PY" "$HERE/export/check_graph.py" "$packed/model.onnx"
 done
 
-echo "Done. Intermediate fp32 and fused fp16 (unpacked) models are in $WORK"
+echo "Done. Intermediate exports and fused $PRECISION (unpacked) models are in $WORK"

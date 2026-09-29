@@ -110,14 +110,16 @@ public final class OnnxEmbeddingEngine implements EmbeddingEngine {
                 throw new DjembedException("maxInputTokens " + maxInputTokens + " leaves no room for text");
             }
 
-            OnnxGraph.Attention attention = OnnxGraph.read(dir.onnxFile()).attention();
-            BatchLimits limits = Limits.batchLimits(engine, maxInputTokens, attention == OnnxGraph.Attention.PACKED);
+            OnnxGraph graph = OnnxGraph.read(dir.onnxFile());
+            OnnxGraph.Attention attention = graph.attention();
+            String precision = graph.halfPrecision() ? "fp16" : "fp32";
+            BatchLimits limits = Limits.batchLimits(engine, maxInputTokens, graph);
             workspace = new Workspace(model, outputName, dimension,
                     Math.toIntExact(limits.paddedTokens()), maxInputTokens, engine.maxBatchSize(), dir.padTokenId());
             String name = directory.getFileName().toString();
-            log.info("Embedding engine {}: dimension={} maxInputTokens={} output={} pooling={} longInput={} attention={}",
+            log.info("Embedding engine {}: dimension={} maxInputTokens={} output={} pooling={} longInput={} attention={} precision={}",
                     name, dimension, maxInputTokens, outputName, pooling == null ? "in-graph" : pooling, options.longInput(),
-                    attention);
+                    attention, precision);
             return new OnnxEmbeddingEngine(name, tokenizer, model, workspace, dimension, maxInputTokens, options, pooling,
                     limits, observer);
         } catch (RuntimeException e) {

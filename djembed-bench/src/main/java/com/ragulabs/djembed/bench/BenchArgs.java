@@ -18,6 +18,7 @@ record BenchArgs(
         URI djembed,
         URI teiEmbed,
         URI teiRerank,
+        URI infinity,
         String apiKey,
         String embedModel,
         String rerankModel,
@@ -34,6 +35,7 @@ record BenchArgs(
               --djembed <url>        Djembed base URL (embed and rerank)
               --tei-embed <url>      TEI instance serving the embedding model
               --tei-rerank <url>     TEI instance serving the rerank model
+              --infinity <url>       Infinity instance serving both models under their Hugging Face ids
               --api-key <key>        Djembed API key, if it has any
               --embed-model <name>   Djembed embedding model name (default bge-m3)
               --rerank-model <name>  Djembed rerank model name (default bge-reranker-v2-m3)
@@ -46,7 +48,11 @@ record BenchArgs(
               --gpu <index>          sample this GPU with nvidia-smi (only when run on the GPU host)
             """;
 
-    private static final Set<String> FLAGS = Set.of("--djembed", "--tei-embed", "--tei-rerank", "--api-key", "--embed-model",
+    /** Hugging Face ids, the names Infinity serves the benchmark's models under. */
+    static final String INFINITY_EMBED_MODEL = "BAAI/bge-m3";
+    static final String INFINITY_RERANK_MODEL = "BAAI/bge-reranker-v2-m3";
+
+    private static final Set<String> FLAGS = Set.of("--djembed", "--tei-embed", "--tei-rerank", "--infinity", "--api-key", "--embed-model",
             "--rerank-model", "--workloads", "--concurrency", "--warmup", "--duration", "--seed", "--out", "--gpu");
 
     static BenchArgs parse(String[] args) {
@@ -65,6 +71,7 @@ record BenchArgs(
                 uri(values.get("--djembed")),
                 uri(values.get("--tei-embed")),
                 uri(values.get("--tei-rerank")),
+                uri(values.get("--infinity")),
                 values.get("--api-key"),
                 values.getOrDefault("--embed-model", "bge-m3"),
                 values.getOrDefault("--rerank-model", "bge-reranker-v2-m3"),
@@ -75,8 +82,8 @@ record BenchArgs(
                 Long.parseLong(values.getOrDefault("--seed", "42")),
                 Path.of(values.getOrDefault("--out", "bench-results")),
                 values.containsKey("--gpu") ? Integer.valueOf(values.get("--gpu")) : null);
-        if (parsed.djembed == null && parsed.teiEmbed == null && parsed.teiRerank == null) {
-            throw new IllegalArgumentException("Give at least one of --djembed, --tei-embed, --tei-rerank");
+        if (parsed.djembed == null && parsed.teiEmbed == null && parsed.teiRerank == null && parsed.infinity == null) {
+            throw new IllegalArgumentException("Give at least one of --djembed, --tei-embed, --tei-rerank, --infinity");
         }
         if (parsed.concurrency.stream().anyMatch(c -> c < 1)) {
             throw new IllegalArgumentException("Concurrency levels must be positive");
@@ -91,6 +98,9 @@ record BenchArgs(
         }
         if (teiEmbed != null || teiRerank != null) {
             targets.add(new Target.Tei(teiEmbed, teiRerank, embedModel));
+        }
+        if (infinity != null) {
+            targets.add(new Target.Infinity(infinity, INFINITY_EMBED_MODEL, INFINITY_RERANK_MODEL));
         }
         return targets;
     }

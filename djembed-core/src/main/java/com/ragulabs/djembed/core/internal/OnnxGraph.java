@@ -16,11 +16,12 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Operator counts of an ONNX model's main graph, read straight from the protobuf without loading any weight.
+ * Operator counts and weight precision of an ONNX model's main graph, read straight from the protobuf.
  *
- * <p>Serialisers write a graph's nodes before its initialisers, so reading stops at the first weight: a few
- * kilobytes even for a gigabyte single-file model. What the operators reveal decides how batches are planned:
- * a graph converted to ONNX Runtime's packing mode computes no padding in its encoder.
+ * <p>Only headers are read: node definitions, and the {@code data_type} of each weight, whose data is skipped (a
+ * seek on disk), so even a gigabyte single-file model costs a few kilobytes of reading. What the graph reveals decides
+ * how batches are planned: a graph in ONNX Runtime's packing mode computes no padding in its encoder, and whether its
+ * weights are half precision decides which attention kernels it gets.
  */
 public final class OnnxGraph {
 
@@ -40,20 +41,27 @@ public final class OnnxGraph {
         UNKNOWN
     }
 
-    static final OnnxGraph UNREADABLE = new OnnxGraph(Map.of(), false);
+    static final OnnxGraph UNREADABLE = new OnnxGraph(Map.of(), Map.of(), false);
+
+    // TensorProto.DataType values.
+    private static final int FLOAT = 1;
+    private static final int FLOAT16 = 10;
+    private static final int BFLOAT16 = 16;
 
     private final Map<String, Integer> operators;
+    private final Map<Integer, Integer> weightTypes;
     private final boolean readable;
 
-    private OnnxGraph(Map<String, Integer> operators, boolean readable) {
+    private OnnxGraph(Map<String, Integer> operators, Map<Integer, Integer> weightTypes, boolean readable) {
         this.operators = operators;
+        this.weightTypes = weightTypes;
         this.readable = readable;
     }
 
     /** Reads {@code file}; an unreadable graph yields {@link Attention#UNKNOWN} rather than an error. */
     public static OnnxGraph read(Path file) {
         try (InputStream in = new BufferedInputStream(Files.newInputStream(file), 1 << 16)) {
-            return new OnnxGraph(Collections.unmodifiableMap(readOperators(new ProtoReader(in))), true);
+            return read(new ProtoReader(in));
         } catch (IOException | RuntimeException e) {
             log.warn("Cannot read the operators of {}: {}", file, e.toString());
             return UNREADABLE;
@@ -62,7 +70,7 @@ public final class OnnxGraph {
 
     /** Parses bytes already in memory; for tests. */
     static OnnxGraph parse(byte[] model) throws IOException {
-        return new OnnxGraph(readOperators(new ProtoReader(new ByteArrayInputStream(model))), true);
+        return read(new ProtoReader(new ByteArrayInputStream(model)));
     }
 
     /** Occurrences of {@code operator}, domain-qualified outside the default domain (e.g. {@code com.microsoft.Attention}). */
@@ -83,15 +91,27 @@ public final class OnnxGraph {
         return Attention.UNFUSED;
     }
 
-    // ModelProto.graph = 7; GraphProto.node = 1, GraphProto.initializer = 5; NodeProto.op_type = 4, NodeProto.domain = 7.
+    /**
+     * Whether the graph computes in half precision: its float16/bfloat16 weights outnumber its float32 ones. ONNX
+     * Runtime's fp16 conversion stores every floating-point weight as float16, while a fp32 graph has none.
+     */
+    public boolean halfPrecision() {
+        int half = weightTypes.getOrDefault(FLOAT16, 0) + weightTypes.getOrDefault(BFLOAT16, 0);
+        return half > weightTypes.getOrDefault(FLOAT, 0);
+    }
+
+    // ModelProto.graph = 7; GraphProto.node = 1, GraphProto.initializer = 5; NodeProto.op_type = 4,
+    // NodeProto.domain = 7; TensorProto.data_type = 2.
     private static final int MODEL_GRAPH = 7;
     private static final int GRAPH_NODE = 1;
     private static final int GRAPH_INITIALIZER = 5;
     private static final int NODE_OP_TYPE = 4;
     private static final int NODE_DOMAIN = 7;
+    private static final int TENSOR_DATA_TYPE = 2;
 
-    private static Map<String, Integer> readOperators(ProtoReader model) throws IOException {
+    private static OnnxGraph read(ProtoReader model) throws IOException {
         Map<String, Integer> operators = new HashMap<>();
+        Map<Integer, Integer> weightTypes = new HashMap<>();
         while (!model.atEnd()) {
             long key = model.varint();
             if (field(key) != MODEL_GRAPH || wire(key) != ProtoReader.LENGTH_DELIMITED) {
@@ -101,18 +121,34 @@ public final class OnnxGraph {
             long end = model.position() + model.varint();
             while (model.position() < end) {
                 long graphKey = model.varint();
-                if (field(graphKey) == GRAPH_INITIALIZER) {
-                    break;
-                }
                 if (field(graphKey) == GRAPH_NODE && wire(graphKey) == ProtoReader.LENGTH_DELIMITED) {
                     operators.merge(operator(model.bytes((int) model.varint())), 1, Integer::sum);
+                } else if (field(graphKey) == GRAPH_INITIALIZER && wire(graphKey) == ProtoReader.LENGTH_DELIMITED) {
+                    int type = weightType(model, model.position() + model.varint());
+                    if (type > 0) {
+                        weightTypes.merge(type, 1, Integer::sum);
+                    }
                 } else {
                     model.skip(wire(graphKey));
                 }
             }
             break;
         }
-        return operators;
+        return new OnnxGraph(Collections.unmodifiableMap(operators), Collections.unmodifiableMap(weightTypes), true);
+    }
+
+    /** The {@code data_type} of the weight ending at {@code end}, skipping its data; 0 when absent. */
+    private static int weightType(ProtoReader model, long end) throws IOException {
+        int type = 0;
+        while (model.position() < end) {
+            long key = model.varint();
+            if (field(key) == TENSOR_DATA_TYPE && wire(key) == ProtoReader.VARINT) {
+                type = (int) model.varint();
+            } else {
+                model.skip(wire(key));
+            }
+        }
+        return type;
     }
 
     private static String operator(byte[] node) throws IOException {

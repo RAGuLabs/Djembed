@@ -33,11 +33,14 @@ class ParsingTest {
     void readsBothRerankFormatsInDocumentOrder() throws Exception {
         Target djembed = new Target.Djembed(URI.create("http://x"), null, "e", "r");
         Target tei = new Target.Tei(null, URI.create("http://y"), "e");
+        Target infinity = new Target.Infinity(URI.create("http://z"), "e", "r");
 
         assertArrayEquals(new float[]{0.1f, 0.9f}, djembed.scores(Target.JSON.readTree("""
                 {"results": [{"index": 1, "relevance_score": 0.9}, {"index": 0, "relevance_score": 0.1}]}"""), 2));
         assertArrayEquals(new float[]{0.1f, 0.9f}, tei.scores(Target.JSON.readTree("""
                 [{"index": 1, "score": 0.9}, {"index": 0, "score": 0.1}]"""), 2));
+        assertArrayEquals(new float[]{0.1f, 0.9f}, infinity.scores(Target.JSON.readTree("""
+                {"object": "rerank", "results": [{"relevance_score": 0.9, "index": 1}, {"relevance_score": 0.1, "index": 0}]}"""), 2));
     }
 
     @Test

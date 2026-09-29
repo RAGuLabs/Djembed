@@ -102,14 +102,23 @@ class BatchPlannerTest {
 
     @Test
     void limitsForPackedModelsWidenOnlyThePaddedShape() {
-        BatchLimits padded = BatchLimits.of(1024, 16_384, 8192, false);
-        BatchLimits packed = BatchLimits.of(1024, 16_384, 8192, true);
+        BatchLimits padded = BatchLimits.of(1024, 16_384, 8192, false, true);
+        BatchLimits packed = BatchLimits.of(1024, 16_384, 8192, true, true);
 
         assertEquals(16_384, padded.paddedTokens());
         assertEquals(16_384, packed.tokenBudget());
         assertEquals(16_384L * BatchLimits.PACKED_PADDING_FACTOR, packed.paddedTokens());
         assertEquals(0, packed.computedPadding(4, 100, 250));
         assertEquals(150, padded.computedPadding(4, 100, 250));
+    }
+
+    @Test
+    void packedFp32ModelsKeepThePaddedBound() {
+        // fp32 PackedAttention runs unfused, with rows × heads × length² workspaces of the padded shape.
+        BatchLimits packedFp32 = BatchLimits.of(1024, 16_384, 8192, true, false);
+
+        assertEquals(16_384, packedFp32.paddedTokens());
+        assertEquals(0, packedFp32.computedPadding(4, 100, 250), "the matrix multiplications still skip padding");
     }
 
     private static BatchLimits padded(int maxRows, long tokenBudget) {
