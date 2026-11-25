@@ -5,6 +5,7 @@
 
 ![maven-central](https://img.shields.io/maven-central/v/com.ragulabs.djembed/djembed-core?color=blue&label=release)
 ![sonatype-nexus](https://img.shields.io/maven-metadata/v?label=snapshot&metadataUrl=https%3A%2F%2Fcentral.sonatype.com%2Frepository%2Fmaven-snapshots%2Fcom%2Fragulabs%2Fdjembed%2Fdjembed-core%2Fmaven-metadata.xml)
+![docker-hub](https://img.shields.io/docker/v/ragulabs/djembed?sort=semver&color=blue&label=docker)
 
 Distributed Java Embeddings: an ONNX Runtime server for embedding and reranking models, with Cohere and OpenAI
 compatible APIs.
@@ -71,7 +72,7 @@ with `djembed.yaml` as `djembed.example.yaml`, paths under `/models`.
 
 ```groovy
 dependencies {
-    implementation 'com.ragulabs.djembed:djembed-core:0.1.0'
+    implementation 'com.ragulabs.djembed:djembed-core:0.2.0'
     runtimeOnly 'com.microsoft.onnxruntime:onnxruntime_gpu:1.32.0'
 }
 ```
@@ -80,7 +81,7 @@ dependencies {
 <dependency>
     <groupId>com.ragulabs.djembed</groupId>
     <artifactId>djembed-core</artifactId>
-    <version>0.1.0</version>
+    <version>0.2.0</version>
 </dependency>
 <dependency>
     <groupId>com.microsoft.onnxruntime</groupId>
