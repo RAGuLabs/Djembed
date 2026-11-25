@@ -8,7 +8,7 @@ what only real hardware can answer is listed at the end.
 ### ONNX Runtime on AMD, from Java
 
 - ONNX Runtime removed its ROCm execution provider in 1.23; AMD's supported path is MIGraphX
-  ([ROCm EP docs](https://onnxruntime.ai/docs/execution-providers/ROCm-ExecutionProvider.html)). Djembed uses 1.29.
+  ([ROCm EP docs](https://onnxruntime.ai/docs/execution-providers/ROCm-ExecutionProvider.html)). Djembed uses 1.32.
 - The published Maven jars carry native libraries for CPU, CUDA and TensorRT only.
 - The Java API has no `addMIGraphX`, so ONNX Runtime's built-in MIGraphX provider cannot be enabled from Java.
 - It does expose plugin execution providers: `OrtEnvironment.registerExecutionProviderLibrary`, `getEpDevices` and

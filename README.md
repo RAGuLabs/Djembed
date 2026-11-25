@@ -50,8 +50,8 @@ See `djembed.example.yaml` and `docker/`. Prometheus metrics are served at `/met
 
 ## Docker
 
-`ragulabs/djembed` on Docker Hub needs an NVIDIA GPU and the NVIDIA Container Toolkit. Models ready for it, fp16 in
-packing mode, are published as
+`ragulabs/djembed` on Docker Hub needs an NVIDIA GPU, a driver ≥ 580 (CUDA 13) and the NVIDIA Container Toolkit.
+Models ready for it, fp16 in packing mode, are published as
 [`ragulabs-org/bge-m3-onnx-fp16-packed`](https://huggingface.co/ragulabs-org/bge-m3-onnx-fp16-packed) and
 [`ragulabs-org/bge-reranker-v2-m3-onnx-fp16-packed`](https://huggingface.co/ragulabs-org/bge-reranker-v2-m3-onnx-fp16-packed).
 
@@ -67,12 +67,12 @@ with `djembed.yaml` as `djembed.example.yaml`, paths under `/models`.
 ## Using the core in a Java application
 
 `djembed-core` runs the same engines in-process. It needs Java 25 and either `onnxruntime` (CPU) or `onnxruntime_gpu`
-(CUDA 12, cuDNN 9).
+(CUDA 13 with an NVIDIA driver ≥ 580, cuDNN 9; on CUDA 12, use `onnxruntime_gpu` 1.30.0 or earlier).
 
 ```groovy
 dependencies {
     implementation 'com.ragulabs.djembed:djembed-core:0.1.0'
-    runtimeOnly 'com.microsoft.onnxruntime:onnxruntime_gpu:1.29.0'
+    runtimeOnly 'com.microsoft.onnxruntime:onnxruntime_gpu:1.32.0'
 }
 ```
 
@@ -85,7 +85,7 @@ dependencies {
 <dependency>
     <groupId>com.microsoft.onnxruntime</groupId>
     <artifactId>onnxruntime_gpu</artifactId>
-    <version>1.29.0</version>
+    <version>1.32.0</version>
     <scope>runtime</scope>
 </dependency>
 ```

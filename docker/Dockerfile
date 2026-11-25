@@ -7,8 +7,8 @@ COPY . .
 # Tests run in CI; the image build only assembles the server.
 RUN ./gradlew --no-daemon :djembed-server:installDist -x test
 
-# onnxruntime_gpu 1.29 is built against CUDA 12.8 and cuDNN 9.
-FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu24.04
+# onnxruntime_gpu 1.32 is built against CUDA 13.0 and cuDNN 9: the host needs an NVIDIA driver >= 580.
+FROM nvidia/cuda:13.0.3-cudnn-runtime-ubuntu24.04
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
